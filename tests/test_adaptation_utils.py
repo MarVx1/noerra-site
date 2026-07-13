@@ -35,6 +35,53 @@ class TestAdaptationUtils(unittest.TestCase):
         sentence = "Эта методика приносит реальную пользу пациентам с бессонницей."
         self.assertTrue(_has_practical_marker(sentence))
 
+    def test_practical_marker_accepts_genuine_recommendations(self):
+        for sentence in (
+            "Там, где это возможно, следует избегать приёма лекарств во время беременности.",
+            "Пение может улучшить это обучение.",
+            "Стоит пересмотреть режим сна перед экзаменом.",
+            "Эти данные могут быть использованы для ранней диагностики.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertTrue(_has_practical_marker(sentence))
+
+    def test_practical_marker_rejects_methodology(self):
+        """Регрессия: в блок 'Практический вывод' попадала методология —
+        'Были применены модели продольных структурных уравнений'."""
+        for sentence in (
+            "Были применены анализ модерации и модели структурных уравнений.",
+            "Используя измерения кортизола, мы оценивали реакцию на стресс.",
+            "Клинические данные анализировались с использованием регрессии.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertFalse(_has_practical_marker(sentence))
+
+    def test_practical_marker_rejects_intro_and_definitions(self):
+        for sentence in (
+            "Глифосат является одним из наиболее широко используемых гербицидов.",
+            "Микроглия стала ключевым регулятором пластичности нейронов.",
+            "Способность различать полезные и отталкивающие стимулы важна для выживания.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertFalse(_has_practical_marker(sentence))
+
+    def test_practical_marker_rejects_calls_for_future_research(self):
+        """Призыв к будущим исследованиям — это задача для науки,
+        а не практическая польза для читателя."""
+        for sentence in (
+            "Требуются дополнительные исследования для подтверждения выводов.",
+            "Необходимы дальнейшие работы на больших выборках.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertFalse(_has_practical_marker(sentence))
+
+    def test_practical_marker_word_boundary_predstoit(self):
+        """Регрессия: маркер 'стоит' ловился внутри 'предСТОИТ выяснить' —
+        открытый вопрос принимался за рекомендацию."""
+        self.assertFalse(
+            _has_practical_marker("Однако ещё предстоит выяснить, как это работает.")
+        )
+
     def test_fix_translation_does_not_truncate_instrumental_case(self):
         """Регрессия: text.replace('вознаграждение', 'награду') раньше
         матчился как префикс более длинной словоформы 'вознаграждением',

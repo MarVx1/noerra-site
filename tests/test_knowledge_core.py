@@ -60,6 +60,38 @@ class TestStudyTypeDetection(unittest.TestCase):
     def test_unknown(self):
         self.assertEqual(detect_study_type("Some random text."), "unknown")
 
+    def test_review_of_rcts_is_a_review_not_an_rct(self):
+        """Регрессия: нарративный обзор рандомизированных испытаний
+        определялся как сам RCT, и статья получала завышенный уровень
+        доказательности ("высокий (RCT)" вместо "средний")."""
+        title = "Advances in behavioral vision training: a narrative review."
+        abstract = "We reviewed randomized controlled trials of perceptual learning."
+        self.assertEqual(detect_study_type(f"{title} {abstract}", title=title), "review")
+
+    def test_future_work_mention_does_not_make_it_an_rct(self):
+        """Регрессия: фраза про будущие исследования ("Future research should
+        use randomized controlled designs") делала работу рандомизированным
+        испытанием."""
+        title = "Therapeutic Yoga: Outcomes from a Residential Program"
+        abstract = (
+            "Participants completed a yoga program. "
+            "Future research should aim to use randomized controlled designs."
+        )
+        self.assertNotEqual(
+            detect_study_type(f"{title} {abstract}", title=title),
+            "randomized_controlled_trial",
+        )
+
+    def test_title_takes_priority_over_abstract(self):
+        title = "A systematic review of sleep interventions"
+        abstract = "We included cohort studies and randomized controlled trials."
+        self.assertEqual(detect_study_type(f"{title} {abstract}", title=title), "systematic_review")
+
+    def test_falls_back_to_full_text_when_title_has_no_type(self):
+        title = "Sleep and memory"
+        abstract = "This meta-analysis pooled 20 studies."
+        self.assertEqual(detect_study_type(f"{title} {abstract}", title=title), "meta_analysis")
+
 
 class TestEvidenceStrength(unittest.TestCase):
     def test_high_strength(self):

@@ -39,8 +39,9 @@ def build_research_passport(
     )
 
 
-    # Определяем тип исследования
-    study_type = detect_study_type(text)
+    # Определяем тип исследования. Заголовок передаётся отдельно: он имеет
+    # приоритет, иначе обзор RCT определяется как сам RCT.
+    study_type = detect_study_type(text, title=article.title or "")
 
 
     # Определяем уровень доказательности

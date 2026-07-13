@@ -87,7 +87,7 @@ def _evidence_badge(articles: list[RawArticle]) -> str:
         return ""
     a = articles[0]
     text = f"{a.title} {a.abstract or ''}"
-    study_type = detect_study_type(text)
+    study_type = detect_study_type(text, title=a.title or "")
     evidence = classify_evidence_strength(study_type, a.is_peer_reviewed)
     badges = {
         "high": "🔬 Сильная доказательность (метаанализ/RCT)",

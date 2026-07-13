@@ -26,14 +26,23 @@ from adaptation.utils import (
     _decompose_abstract,
     _detect_numbers,
     _fix_translation,
+    _strip_latin_abbreviations,
 )
 
+# Названия источников — имена собственные, поэтому остаются латиницей, но
+# должны быть оформлены как бренд, а не как сырое поле из БД ("frontiers").
 SOURCE_NAMES = {
     "pubmed": "PubMed",
     "arxiv": "arXiv",
-    "cyberleninka": "CyberLeninka",
+    "cyberleninka": "КиберЛенинка",
     "rss": "RSS",
     "youtube": "YouTube",
+    "frontiers": "Frontiers",
+    "plos-one": "PLOS ONE",
+    "psyarxiv": "PsyArXiv",
+    "nplus1": "N+1",
+    "postnauka": "ПостНаука",
+    "naked-science": "Naked Science",
 }
 
 Scenario = Literal[
@@ -370,6 +379,15 @@ def _evidence_ru(evidence: str) -> str:
     }.get(evidence, evidence)
 
 
+def _plural_related_works(n: int) -> str:
+    """Согласует числительное: 1 близкая работа / 2 близкие работы / 5 близких работ."""
+    if n % 10 == 1 and n % 100 != 11:
+        return f"По теме найдена {n} близкая работа."
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return f"По теме найдено {n} близкие работы."
+    return f"По теме найдено {n} близких работ."
+
+
 def _build_context_summary(passport: dict) -> str:
     kc = passport.get("knowledge_context") or {}
     if not kc:
@@ -382,7 +400,7 @@ def _build_context_summary(passport: dict) -> str:
     open_questions = kc.get("open_questions", [])
 
     if related:
-        lines.append(f"По теме найдено {len(related)} близких работ.")
+        lines.append(_plural_related_works(len(related)))
     if consensus:
         lines.append("Часть предыдущих исследований подтверждает общую картину.")
     if contradictions:
@@ -391,8 +409,16 @@ def _build_context_summary(passport: dict) -> str:
         lines.append("Остаются открытые вопросы, требующие дальнейших проверок.")
 
     if related:
-        top_titles = [item["title"] for item in related[:2]]
-        lines.append(f"Среди ближайших работ: {', '.join(top_titles)}.")
+        # Заголовки близких работ лежат в БД в оригинале (обычно английском)
+        # и раньше вставлялись как есть — в 78% статей это давало кусок
+        # английского текста посреди русской статьи.
+        top_titles = [
+            _strip_latin_abbreviations(_translate(item["title"]))
+            for item in related[:2] if item.get("title")
+        ]
+        top_titles = [t for t in top_titles if t]
+        if top_titles:
+            lines.append(f"Среди ближайших работ: {', '.join(top_titles)}.")
 
     return " ".join(lines)
 
@@ -429,6 +455,10 @@ class EditorialEngine:
         # в БД, и подмешивать туда стилевые правки означало бы закэшировать
         # их как "перевод", не давая потом менять правила без инвалидации кэша.
         abstract = simplify_text(abstract)
+        # Убираем латинские аббревиатуры в скобках — (NAc), (BNST), (SECPT).
+        # Только на исходном тексте: наши собственные шаблоны трогать нельзя,
+        # иначе из блока доказательности вырежется "(RCT)".
+        abstract = _strip_latin_abbreviations(abstract)
 
         # Декомпозиция абстракта — каждое предложение в одной роли
         decomposed = _decompose_abstract(abstract)
@@ -461,7 +491,12 @@ class EditorialEngine:
             research_passport = build_research_passport(article, topic, article_id=0)
             passport["evidence_strength"] = research_passport.evidence_strength
             passport["trust_level"] = research_passport.trust_level
-            passport["limitations"] = research_passport.limitations
+            # Ограничения извлекаются из ОРИГИНАЛЬНОГО (английского) абстракта
+            # в research_analysis и раньше попадали в статью непереведёнными —
+            # блок "Ограничения:" был целиком на английском.
+            passport["limitations"] = _strip_latin_abbreviations(
+                _translate(research_passport.limitations)
+            )
             passport["study_type"] = research_passport.study_type
             passport["peer_reviewed"] = research_passport.peer_reviewed
             passport["sample_size"] = research_passport.sample_size

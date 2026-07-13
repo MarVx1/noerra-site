@@ -61,5 +61,44 @@ class TestAdaptationUtils(unittest.TestCase):
         self.assertIn("награду", _fix_translation("получить вознаграждение сразу."))
 
 
+
+class TestRussianOnlyHelpers(unittest.TestCase):
+    """Требование: в статье не должно быть английского текста."""
+
+    def test_strips_latin_abbreviation_in_parens(self):
+        from adaptation.utils import _strip_latin_abbreviations
+        text = "Прилежащее ядро (NAc) и ядро ложа терминальной полоски (BNST) активны."
+        result = _strip_latin_abbreviations(text)
+        self.assertNotIn("NAc", result)
+        self.assertNotIn("BNST", result)
+        self.assertIn("Прилежащее ядро", result)
+        self.assertNotIn(" ,", result)
+
+    def test_keeps_parens_with_russian_content(self):
+        from adaptation.utils import _strip_latin_abbreviations
+        text = "Эффект сохраняется (по крайней мере неделю)."
+        self.assertIn("(по крайней мере неделю)", _strip_latin_abbreviations(text))
+
+    def test_removes_invisible_spaces(self):
+        from adaptation.utils import _strip_latin_abbreviations
+        self.assertNotIn("​", _strip_latin_abbreviations("ядро​​ мозга"))
+
+    def test_latin_ratio_and_cleanliness(self):
+        from adaptation.utils import _latin_ratio, _is_clean_russian
+        self.assertEqual(_latin_ratio("Полностью русское предложение."), 0.0)
+        self.assertTrue(_is_clean_russian("Полностью русское предложение."))
+        self.assertFalse(_is_clean_russian("Mostly latin sentence here."))
+
+    def test_decompose_prefers_latin_free_sentences(self):
+        from adaptation.utils import _decompose_abstract
+        abstract = (
+            "Результаты показывают, что ADGRL3 KO мыши demonstrate altered DA release. "
+            "Результаты показывают, что недосып ухудшает память."
+        )
+        d = _decompose_abstract(abstract)
+        # При наличии выбора finding должен быть взят из чистого предложения.
+        self.assertIn("недосып", d["finding"].lower())
+
+
 if __name__ == '__main__':
     unittest.main()

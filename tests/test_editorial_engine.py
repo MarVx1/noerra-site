@@ -287,18 +287,18 @@ class TestEditorialCritic(unittest.TestCase):
     def test_passes_good_publication(self):
         passport = {
             "confidence_score": 0.8,
-            "main_idea": "Dopamine affects motivation",
+            "main_idea": "Дофамин влияет на мотивацию",
             "evidence_strength": "high",
-            "limitations": "Small sample.",
+            "limitations": "Небольшая выборка.",
             "sources": "PubMed",
-            "analogy": "Dopamine works like a prediction system, not a reward button.",
+            "analogy": "Дофамин работает как система предсказаний, а не кнопка удовольствия.",
         }
-        # 18 words with 3 paragraph breaks = passes both checks
+        # Текст русский: критик блокирует латиницу в статье.
         text = (
-            "This is a long enough text for a publication that should pass the critic checks.\n\n"
-            "Here is some more content that adds to the overall length of this particular publication.\n\n"
-            "And here is a third paragraph with even more words to ensure the text is definitely long enough to pass. "
-            "Practically, this may help guide recommendations."
+            "Достаточно длинный текст публикации, который должен пройти проверки критика.\n\n"
+            "Здесь ещё немного содержания, добавляющего общей длины этой публикации.\n\n"
+            "А вот третий абзац, где слов ещё больше, чтобы текст точно оказался достаточно длинным. "
+            "Практический вывод: это может помочь принять решение."
         )
         review = self.critic.review(passport, text)
         self.assertTrue(review["passed"])
@@ -310,7 +310,7 @@ class TestEditorialCritic(unittest.TestCase):
             "publication_type": "article",
             "main_idea": "",
         }
-        review = self.critic.review(passport, "Short text.")
+        review = self.critic.review(passport, "Короткий текст.")
         self.assertFalse(review["passed"])
         self.assertTrue(any("Low confidence" in item for item in review["scientific"]))
 
@@ -318,13 +318,13 @@ class TestEditorialCritic(unittest.TestCase):
         """Short text is a soft problem — reported but does not block."""
         passport = {
             "confidence_score": 0.8,
-            "main_idea": "Some idea",
+            "main_idea": "Некоторая идея",
             "evidence_strength": "high",
-            "limitations": "Test limitation.",
-            "sources": "Test source.",
-            "analogy": "This is like a test analogy.",
+            "limitations": "Тестовое ограничение.",
+            "sources": "Тестовый источник.",
+            "analogy": "Это похоже на тестовую аналогию.",
         }
-        review = self.critic.review(passport, "Short text.")
+        review = self.critic.review(passport, "Короткий текст.")
         self.assertTrue(review["passed"])
         self.assertTrue(any("too short" in item.lower() for item in review["clarity"]))
 
@@ -654,10 +654,10 @@ class TestCheckOutlineComplete(unittest.TestCase):
     def test_review_uses_named_blocks_when_provided(self):
         passport = {
             "confidence_score": 0.8,
-            "main_idea": "Some idea",
+            "main_idea": "Некоторая идея",
             "evidence_strength": "high",
-            "limitations": "Test limitation.",
-            "sources": "Test source.",
+            "limitations": "Тестовое ограничение.",
+            "sources": "Тестовый источник.",
             "analogy": "Test analogy.",
         }
         text = (

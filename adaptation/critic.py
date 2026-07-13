@@ -16,6 +16,20 @@ HARD_PROBLEM_TEXTS = {
     "Practical value is false but no honest fallback phrase found in text.",
 }
 
+# Hard-проблемы, чей текст динамический (содержит найденные слова), поэтому
+# точным совпадением с HARD_PROBLEM_TEXTS их не поймать.
+HARD_PROBLEM_PREFIXES = (
+    "Latin text in a Russian article",
+)
+
+# Латиница, допустимая в русской статье: названия источников (имена
+# собственные) и наши собственные обозначения. Всё прочее — утечка
+# непереведённого текста, см. check_language_is_russian.
+ALLOWED_LATIN_WORDS = {
+    "pubmed", "arxiv", "cyberleninka", "psyarxiv", "frontiers", "plos", "one",
+    "naked", "science", "rss", "youtube", "telegraph", "rct",
+}
+
 # Слова/фразы, которые превращают текст в "жёлтую" сенсацию — запрещены
 # EDITORIAL_PLAYBOOK.md, Правило №8 ("Никакого драматизма").
 HYPE_MARKERS = (
@@ -61,6 +75,31 @@ class EditorialCritic:
         if not passport.get("sources"):
             issues.append("Sources are not provided.")
         return issues
+
+    def check_language_is_russian(self, text: str) -> List[str]:
+        """Статья должна быть на русском — латиница в тексте недопустима.
+
+        Часть латиницы убирается раньше (перевод ограничений и заголовков
+        близких работ, вырезание аббревиатур в скобках, выбор предложений
+        без латиницы при разборе абстракта). Но остаются работы, где имя
+        гена или белка — само подлежащее ("Как ADGRL3 влияет на динамику
+        дофамина"): переписать такое предложение rule-based нельзя, а
+        альтернативных предложений в абстракте нет.
+
+        Такие статьи блокируются: лучше не опубликовать ничего, чем
+        выпустить наполовину английский текст. Заодно это отсекает
+        узкомолекулярные работы, которые и так не для широкой аудитории.
+        """
+        cleaned = re.sub(r"<[^>]+>", " ", text)
+        cleaned = re.sub(r"https?://\S+", " ", cleaned)
+        found = {
+            w for w in re.findall(r"[A-Za-z][A-Za-z\-']{1,}", cleaned)
+            if w.lower() not in ALLOWED_LATIN_WORDS
+        }
+        if found:
+            sample = ", ".join(sorted(found)[:5])
+            return [f"Latin text in a Russian article: {sample}."]
+        return []
 
     def check_analogy_present(self, passport: Dict[str, Any]) -> List[str]:
         """Analogy (Stage 7): без аналогии статья не должна публиковаться.
@@ -264,14 +303,18 @@ class EditorialCritic:
         grammar = self.check_grammar(publication_text)
         style_language = self.check_style_language(publication_text)
         rhythm = self.check_rhythm(publication_text)
+        language = self.check_language_is_russian(publication_text)
         outline = self.check_outline_complete(named_blocks) if named_blocks is not None else []
         problems = (
             scientific + analogy + uncertainty + clarity + practical + practical_honesty
-            + myths + duplicates + grammar + style_language + rhythm + outline
+            + myths + duplicates + grammar + style_language + rhythm + language + outline
         )
 
-        hard_problems = [p for p in problems if p in HARD_PROBLEM_TEXTS]
-        soft_problems = [p for p in problems if p not in HARD_PROBLEM_TEXTS]
+        def _is_hard(problem: str) -> bool:
+            return problem in HARD_PROBLEM_TEXTS or problem.startswith(HARD_PROBLEM_PREFIXES)
+
+        hard_problems = [p for p in problems if _is_hard(p)]
+        soft_problems = [p for p in problems if not _is_hard(p)]
 
         return {
             "passed": len(hard_problems) == 0,
@@ -289,5 +332,6 @@ class EditorialCritic:
             "grammar": grammar,
             "style_language": style_language,
             "rhythm": rhythm,
+            "language": language,
             "outline": outline,
         }

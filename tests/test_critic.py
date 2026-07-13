@@ -7,25 +7,29 @@ class TestEditorialCritic(unittest.TestCase):
         self.critic = EditorialCritic()
         self.good_passport = {
             "confidence_score": 0.8,
-            "main_idea": "Sleep deprivation impairs working memory.",
+            "main_idea": "Недосып ухудшает рабочую память.",
             "evidence_strength": "high",
-            "limitations": "Small sample size.",
+            "limitations": "Небольшой размер выборки.",
             "sources": "PubMed, arXiv",
-            "analogy": "Sleep is like a nightly cleanup crew for the brain.",
+            "analogy": "Сон похож на ночную смену уборщиков в офисе.",
         }
+        # Текст фикстур — русский: критик блокирует латиницу в статье
+        # (check_language_is_russian), и англоязычная заглушка теперь
+        # справедливо не проходит.
         self.good_text = (
-            "This study found that sleep deprivation impairs working memory.\n\n"
-            "That matters because it may affect daily decisions.\n\n"
-            "Practically, this recommends ensuring adequate sleep.\n\n"
-            "However, the evidence is not yet definitive."
+            "Недосып ухудшает рабочую память.\n\n"
+            "Это важно, потому что влияет на повседневные решения.\n\n"
+            "Практический вывод: стоит обеспечить достаточный сон.\n\n"
+            "Однако доказательства пока не окончательные."
         )
 
     def test_passes_good_content(self):
         text = (
-            "This study found that sleep deprivation impairs working memory.\n\n"
-            "That matters because it may affect daily decisions.\n\n"
-            "Practically, this recommends ensuring adequate sleep.\n\n"
-            "However, the evidence is not yet definitive. This addresses the common misconception that sleep is only rest."
+            "Недосып ухудшает рабочую память.\n\n"
+            "Это важно, потому что влияет на повседневные решения.\n\n"
+            "Практический вывод: стоит обеспечить достаточный сон.\n\n"
+            "Однако доказательства пока не окончательные. Это развенчивает распространённый миф, "
+            "будто сон — это просто отдых."
         )
         review = self.critic.review(self.good_passport, text)
         self.assertTrue(review["passed"])
@@ -54,23 +58,23 @@ class TestEditorialCritic(unittest.TestCase):
 
     def test_fails_hype_language(self):
         """Hype language is a soft problem — reported but does not block."""
-        text = "This is a revolutionary breakthrough! It changes everything."
+        text = "Это революционный прорыв! Он полностью меняет всё."
         review = self.critic.review(self.good_passport, text)
         self.assertTrue(review["passed"])
         self.assertTrue(any("Sensational" in p or "hype" in p.lower() for p in review["uncertainty"]))
 
     def test_fails_short_text(self):
         """Short text is a soft problem — reported but does not block."""
-        review = self.critic.review(self.good_passport, "Too short text.")
+        review = self.critic.review(self.good_passport, "Слишком короткий текст.")
         self.assertTrue(review["passed"])
         self.assertTrue(any("too short" in p.lower() for p in review["clarity"]))
 
     def test_fails_no_practical_value(self):
         """Missing practical value is a soft problem — reported but does not block."""
         text = (
-            "This study found that sleep deprivation impairs working memory.\n\n"
-            "The results demonstrate a clear effect on cognitive performance.\n\n"
-            "However, the evidence is not yet definitive."
+            "Недосып ухудшает рабочую память.\n\n"
+            "Результаты показывают заметный эффект на когнитивные показатели.\n\n"
+            "Однако доказательства пока не окончательные."
         )
         review = self.critic.review(self.good_passport, text)
         self.assertTrue(review["passed"])
@@ -104,9 +108,9 @@ class TestEditorialCritic(unittest.TestCase):
 
     def test_rhythm_flags_repeated_paragraph_openers(self):
         text = (
-            "This is the first paragraph about sleep.\n\n"
-            "This is the second paragraph about sleep.\n\n"
-            "However, evidence remains preliminary."
+            "Это первый абзац про сон.\n\n"
+            "Это второй абзац про сон.\n\n"
+            "Однако доказательства пока предварительные."
         )
         review = self.critic.review(self.good_passport, text)
         self.assertTrue(review["passed"])
@@ -118,11 +122,32 @@ class TestEditorialCritic(unittest.TestCase):
 
     def test_long_sentence_flagged_as_soft(self):
         """Стилевые метрики (Фаза 6) — soft на старте (burn-in rollout)."""
-        long_sentence = " ".join(["word"] * 30) + "."
+        long_sentence = " ".join(["слово"] * 30) + "."
         text = self.good_text + "\n\n" + long_sentence
         review = self.critic.review(self.good_passport, text)
         self.assertTrue(review["passed"])
         self.assertTrue(any("exceed" in p and "words" in p for p in review["clarity"]))
+
+    def test_latin_text_blocks_publication(self):
+        """Требование: статья только на русском. Латиница — hard-стоп.
+
+        Такое остаётся, когда имя гена — само подлежащее ("Как ADGRL3
+        влияет..."): переписать rule-based нельзя, поэтому лучше не
+        публиковать вовсе, чем выпустить полуанглийский текст.
+        """
+        text = self.good_text + "\n\nОднако то, как ADGRL3 влияет на дофамин, изучено плохо."
+        review = self.critic.review(self.good_passport, text)
+        self.assertFalse(review["passed"])
+        self.assertTrue(any(p.startswith("Latin text") for p in review["hard_problems"]))
+
+    def test_source_brand_names_are_allowed(self):
+        """Названия источников — имена собственные, они не блокируют."""
+        text = self.good_text + "\n\nОсновано на материалах: PubMed, arXiv."
+        review = self.critic.review(self.good_passport, text)
+        self.assertEqual(review["language"], [])
+
+    def test_clean_russian_text_passes_language_check(self):
+        self.assertEqual(self.critic.check_language_is_russian(self.good_text), [])
 
     def test_fails_missing_analogy(self):
         """Analogy (Stage 7) отсутствует — это hard-блокер публикации."""
@@ -135,16 +160,16 @@ class TestEditorialCritic(unittest.TestCase):
         """Регрессия на баг: раньше check_myths никогда не мог сообщить о
         проблеме ни при каких условиях (return [] был недостижим). Теперь
         метод реально работает, но только для сценария 'debunk'."""
-        issues = self.critic.check_myths("Plain neutral text about sleep and memory.", scenario="discovery")
+        issues = self.critic.check_myths("Нейтральный текст про сон и память.", scenario="discovery")
         self.assertEqual(issues, [])
 
     def test_check_myths_flags_debunk_without_myth_phrase(self):
-        issues = self.critic.check_myths("Plain neutral text about sleep and memory.", scenario="debunk")
+        issues = self.critic.check_myths("Нейтральный текст про сон и память.", scenario="debunk")
         self.assertTrue(issues)
         self.assertIn("Debunk scenario but no explicit myth/misconception phrase found.", issues)
 
     def test_check_myths_passes_debunk_with_myth_phrase(self):
-        issues = self.critic.check_myths("This addresses a common misconception.", scenario="debunk")
+        issues = self.critic.check_myths("Это развенчивает распространённое заблуждение.", scenario="debunk")
         self.assertEqual(issues, [])
 
     def test_practical_honesty_passes_when_practical_value_true(self):

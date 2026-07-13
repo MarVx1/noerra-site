@@ -199,6 +199,80 @@ def _fix_translation(text: str) -> str:
     return text.strip()
 
 
+# ── Латиница в переведённом тексте ─────────────────────────────
+# Google Translate оставляет как есть узкоспециальные аббревиатуры и
+# латинские термины (WMH, vmPFC, tDCS, fsQCA, stratum oriens). Словарём их
+# не закрыть: половина придумана авторами конкретной статьи. Вместо этого
+# при разборе абстракта предпочитаем предложения без латиницы — в абстракте
+# обычно есть из чего выбрать.
+
+# Порог подобран на выборке из БД: при 0.08 число статей с полностью чистым
+# телом максимально (18/31), дальше ужесточение уже ничего не даёт — у
+# оставшихся латиница есть во ВСЕХ предложениях (работы про нокаут генов,
+# где имя гена и есть подлежащее). Такие статьи отсекает critic.
+MAX_LATIN_RATIO = 0.08
+
+# Аббревиатура в скобках: (NAc), (BNST), (SECPT), (ESCRT-III), (fMRI).
+# Внутри — только латиница/цифры/дефисы, без кириллицы. Для научпоп-читателя
+# это шум (ТЗ: каждый термин объясняется сразу, читатель не должен
+# чувствовать себя глупым), а для требования "только русский" — прямое
+# нарушение. Порог доли латиницы их не ловит: в длинном русском предложении
+# "(NAc)" даёт всего ~3%.
+_LATIN_PAREN = re.compile(r"\s*\((?=[^)]*[A-Za-z])[A-Za-z0-9\-–—/.,\s]{2,}\)")
+
+# Google Translate вставляет неразрывные/нулевой ширины пробелы.
+_INVISIBLE_SPACES = re.compile(r"[ ​‌‍﻿]+")
+
+
+def _strip_latin_abbreviations(text: str) -> str:
+    """Убирает латинские аббревиатуры в скобках и невидимые пробелы."""
+    if not text:
+        return text
+    text = _INVISIBLE_SPACES.sub(" ", text)
+    text = _LATIN_PAREN.sub("", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    return text.strip()
+
+
+def _latin_ratio(sentence: str) -> float:
+    """Доля латинских букв среди всех буквенных символов предложения."""
+    letters = [c for c in sentence if c.isalpha()]
+    if not letters:
+        return 0.0
+    latin = sum(1 for c in letters if "a" <= c.lower() <= "z")
+    return latin / len(letters)
+
+
+def _is_clean_russian(sentence: str) -> bool:
+    """Предложение достаточно русское, чтобы не резать глаз читателю."""
+    return _latin_ratio(sentence) <= MAX_LATIN_RATIO
+
+
+def _find_sentence(
+    sentences: list[str],
+    marker_fn,
+    exclude: set[int],
+    reverse: bool = False,
+) -> int | None:
+    """Ищет предложение по маркеру, отдавая приоритет чистому от латиницы.
+
+    Два прохода: сначала только среди русских предложений, затем среди
+    любых — чтобы не потерять блок целиком, если чистых вариантов нет.
+    """
+    order = range(len(sentences) - 1, -1, -1) if reverse else range(len(sentences))
+    for require_clean in (True, False):
+        for i in order:
+            if i in exclude:
+                continue
+            if not marker_fn(sentences[i]):
+                continue
+            if require_clean and not _is_clean_russian(sentences[i]):
+                continue
+            return i
+    return None
+
+
 # ── Декомпозиция абстракта ─────────────────────────────────────
 # Разлагает текст на компоненты без повторов: каждое предложение
 # используется ровно один раз в одной роли.
@@ -221,30 +295,20 @@ def _decompose_abstract(abstract: str) -> dict[str, str]:
 
     used: set[int] = set()
 
-    # 1. Ищем ключевую находку (предложение с результатом)
-    finding_idx = None
-    for i, s in enumerate(sentences):
-        if _has_result_marker(s):
-            finding_idx = i
-            break
+    # Каждый блок ищется через _find_sentence: сначала среди предложений без
+    # латиницы, и только потом среди любых — иначе в статью попадали куски
+    # вида "ингибирует последующую индукцию LTP в MML in vitro".
 
-    # 2. Ищем практический вывод (обычно в конце)
-    practical_idx = None
-    for i in range(len(sentences) - 1, -1, -1):
-        if i == finding_idx:
-            continue
-        if _has_practical_marker(sentences[i]):
-            practical_idx = i
-            break
+    # 1. Ключевая находка (предложение с результатом)
+    finding_idx = _find_sentence(sentences, _has_result_marker, exclude=set())
 
-    # 3. Ищем методологию
-    method_idx = None
-    for i, s in enumerate(sentences):
-        if i in (finding_idx, practical_idx):
-            continue
-        if _has_method_marker(s):
-            method_idx = i
-            break
+    # 2. Практический вывод (обычно в конце)
+    exclude = {finding_idx} if finding_idx is not None else set()
+    practical_idx = _find_sentence(sentences, _has_practical_marker, exclude, reverse=True)
+
+    # 3. Методология
+    exclude = {i for i in (finding_idx, practical_idx) if i is not None}
+    method_idx = _find_sentence(sentences, _has_method_marker, exclude)
 
     result: dict[str, str] = {"hook": "", "context": "", "finding": "", "practical": "", "method": ""}
 
@@ -260,19 +324,20 @@ def _decompose_abstract(abstract: str) -> dict[str, str]:
         result["method"] = sentences[method_idx]
         used.add(method_idx)
 
-    # 4. Хук — первое неиспользованное предложение (не методология)
-    for i, s in enumerate(sentences):
-        if i not in used and i != method_idx:
-            result["hook"] = s
-            used.add(i)
-            break
+    # 4. Хук — первое неиспользованное предложение (не методология).
+    #    Латиницу так же обходим стороной, если есть выбор.
+    hook_exclude = set(used) | ({method_idx} if method_idx is not None else set())
+    hook_idx = _find_sentence(sentences, lambda s: True, hook_exclude)
+    if hook_idx is not None:
+        result["hook"] = sentences[hook_idx]
+        used.add(hook_idx)
 
     # 5. Контекст — ещё одно неиспользованное предложение
-    for i, s in enumerate(sentences):
-        if i not in used and i != method_idx:
-            result["context"] = s
-            used.add(i)
-            break
+    ctx_exclude = set(used) | ({method_idx} if method_idx is not None else set())
+    ctx_idx = _find_sentence(sentences, lambda s: True, ctx_exclude)
+    if ctx_idx is not None:
+        result["context"] = sentences[ctx_idx]
+        used.add(ctx_idx)
 
     # Если finding пуст, используем hook как finding
     if not result["finding"] and result["hook"]:

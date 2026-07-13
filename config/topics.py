@@ -43,7 +43,9 @@ TOPIC_KEYWORDS: dict[str, dict[str, int]] = {
         "sleep":                    3,
         "circadian":                3,
         "insomnia":                 3,
-        "rem":                      2,
+        # Не голое "rem": как подстрока оно ловило remains/remote/remember
+        # (54 ложных срабатывания по базе) и уводило статью в тему "сон".
+        "rem sleep":                2,
         "slow-wave":                2,
         "melatonin":                3,
         "sleep deprivation":        3,

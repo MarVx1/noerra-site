@@ -3,25 +3,59 @@
 # ============================================================
 
 import logging
+import re
 from parsers.base import RawArticle
 from config.topics import TOPIC_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
 
+# Совпадение в ЗАГОЛОВКЕ весит больше, чем в теле абстракта: заголовок —
+# это предмет статьи, а в теле тема может быть упомянута мимоходом.
+# Именно из-за этого статья "The long road after breast cancer" получала
+# тему "сон" (слово мелькнуло в абстракте) и публиковалась как
+# "Сон: очередное подтверждение".
+TITLE_WEIGHT_MULTIPLIER = 2
+
+# Минимальный взвешенный вес темы-победителя. Ниже порога считаем, что
+# статья не о нашей тематике, и возвращаем "unknown" — scheduler уже умеет
+# складывать такие статьи в off_topic и не публиковать.
+#
+# Порог подобран на размеченной выборке из БД (8 статей по теме / 7 не по
+# теме): все 8 корректных проходят, отсеиваются все грубые ложные темы.
+# Относительная confidence для этого не годится — она измеряет лишь
+# перевес над другими темами, а не то, о статье ли это вообще (хорошие
+# статьи опускались до 0.33, ложные поднимались до 0.50 — разделения нет).
+MIN_TOPIC_SCORE = 6
+
+# Ключевое слово должно начинаться с границы слова, иначе оно ловится
+# внутри посторонних слов: "axon" в "taxonomy", "rem" в "remains".
+# Граница ставится ТОЛЬКО в начале — окончание намеренно свободно, чтобы
+# сохранить морфологию: "behavior" → "behavioral", "attention" →
+# "attentional", "stress" → "stressors", "cognition" → "cognitions".
+_KEYWORD_PATTERNS: dict[str, list[tuple[re.Pattern, int]]] = {
+    topic: [(re.compile(rf"\b{re.escape(kw.lower())}"), weight)
+            for kw, weight in keywords.items()]
+    for topic, keywords in TOPIC_KEYWORDS.items()
+}
+
+
 def classify(article: RawArticle) -> tuple[str, float]:
     """
     Определяет тему статьи и уверенность (0.0–1.0).
     Возвращает (topic, confidence).
-    Если ни одна тема не подошла — возвращает ('unknown', 0.0).
+    Если тема не определена или определена слишком слабо — ('unknown', 0.0).
     """
-    text = f"{article.title} {article.abstract}".lower()
+    title = (article.title or "").lower()
+    abstract = (article.abstract or "").lower()
     topic_scores: dict[str, int] = {}
 
-    for topic, keywords in TOPIC_KEYWORDS.items():
+    for topic, patterns in _KEYWORD_PATTERNS.items():
         score = 0
-        for kw, weight in keywords.items():
-            if kw.lower() in text:
+        for pattern, weight in patterns:
+            if pattern.search(title):
+                score += weight * TITLE_WEIGHT_MULTIPLIER
+            elif pattern.search(abstract):
                 score += weight
         topic_scores[topic] = score
 
@@ -34,8 +68,15 @@ def classify(article: RawArticle) -> tuple[str, float]:
 
     confidence = round(best_score / total_score, 2) if total_score > 0 else 0.0
 
+    if best_score < MIN_TOPIC_SCORE:
+        logger.debug(
+            f"Topic rejected: best '{best_topic}' scored {best_score} < {MIN_TOPIC_SCORE} "
+            f"for '{article.title[:60]}'"
+        )
+        return "unknown", 0.0
+
     logger.debug(
-        f"Topic '{best_topic}' (conf={confidence}) for '{article.title[:60]}'"
+        f"Topic '{best_topic}' (score={best_score}, conf={confidence}) for '{article.title[:60]}'"
     )
     return best_topic, confidence
 

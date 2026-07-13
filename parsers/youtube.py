@@ -7,6 +7,7 @@
 import re
 import logging
 import requests
+from requests.exceptions import ReadTimeout, ConnectionError as ReqConnError
 from parsers.base import BaseParser, RawArticle
 from adaptation.editorial_engine import EditorialEngine
 
@@ -94,34 +95,42 @@ class YouTubeParser(BaseParser):
 
     def _fetch_channel_rss(self, channel_name: str, channel_id: str) -> list[dict]:
         """Получает последние видео канала через RSS."""
-        try:
-            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            resp = requests.get(rss_url, timeout=10)
-            if resp.status_code != 200:
-                logger.debug(f"YouTube RSS status {resp.status_code} for {channel_name}")
-                return []
+        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        for attempt in range(2):
+            try:
+                resp = requests.get(rss_url, timeout=15)
+                if resp.status_code != 200:
+                    logger.debug(f"YouTube RSS status {resp.status_code} for {channel_name}")
+                    return []
 
-            entries = re.findall(r'<entry>(.*?)</entry>', resp.text, re.DOTALL)
-            videos = []
-            for entry in entries[:10]:  # последние 10 видео
-                video_id = re.search(r'<yt:videoId>(.*?)</yt:videoId>', entry)
-                title_m  = re.search(r'<title>(.*?)</title>', entry)
-                if not video_id or not title_m:
+                entries = re.findall(r'<entry>(.*?)</entry>', resp.text, re.DOTALL)
+                videos = []
+                for entry in entries[:10]:  # последние 10 видео
+                    video_id = re.search(r'<yt:videoId>(.*?)</yt:videoId>', entry)
+                    title_m  = re.search(r'<title>(.*?)</title>', entry)
+                    if not video_id or not title_m:
+                        continue
+
+                    # Описание из RSS
+                    desc_m = re.search(r'<media:description>(.*?)</media:description>', entry, re.DOTALL)
+                    description = desc_m.group(1).strip() if desc_m else ""
+
+                    videos.append({
+                        "video_id": video_id.group(1).strip(),
+                        "title": title_m.group(1).strip(),
+                        "description": description,
+                    })
+                return videos
+            except (ReadTimeout, ReqConnError) as e:
+                if attempt == 0:
+                    logger.warning(f"YouTube RSS timeout for {channel_name}, retrying: {e}")
                     continue
-
-                # Описание из RSS
-                desc_m = re.search(r'<media:description>(.*?)</media:description>', entry, re.DOTALL)
-                description = desc_m.group(1).strip() if desc_m else ""
-
-                videos.append({
-                    "video_id": video_id.group(1).strip(),
-                    "title": title_m.group(1).strip(),
-                    "description": description,
-                })
-            return videos
-        except Exception as e:
-            logger.warning(f"YouTube RSS error ({channel_name}): {e}")
-            return []
+                logger.warning(f"YouTube RSS timeout for {channel_name} after retry: {e}")
+                return []
+            except Exception as e:
+                logger.warning(f"YouTube RSS error ({channel_name}): {e}")
+                return []
+        return []
 
     def _match_topic(self, title: str) -> str | None:
         """Определяет тему видео по ключевым словам в заголовке."""

@@ -67,6 +67,14 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
             CREATE INDEX IF NOT EXISTS idx_articles_topic  ON articles(topic);
         """)
+
+        # Migration: add reject_reason column if not exists
+        cols = conn.execute("PRAGMA table_info(articles)").fetchall()
+        col_names = {c[1] for c in cols}
+        if "reject_reason" not in col_names:
+            conn.execute("ALTER TABLE articles ADD COLUMN reject_reason TEXT DEFAULT NULL")
+            logger.info("Migration: added reject_reason column to articles")
+
         # FTS5 full-text search on articles
         conn.executescript("""
             CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
@@ -397,12 +405,18 @@ def get_article_by_id(article_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
-def update_article_status(article_id: int, status: str):
+def update_article_status(article_id: int, status: str, reject_reason: str = ""):
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE articles SET status = ? WHERE id = ?",
-            (status, article_id),
-        )
+        if reject_reason:
+            conn.execute(
+                "UPDATE articles SET status = ?, reject_reason = ? WHERE id = ?",
+                (status, reject_reason, article_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE articles SET status = ? WHERE id = ?",
+                (status, article_id),
+            )
 
 
 def save_publication(article_id: int, telegraph_url: str, telegram_post_id: int = 0):
@@ -473,9 +487,23 @@ def get_stats() -> dict:
         today     = conn.execute(
             "SELECT COUNT(*) FROM articles WHERE created_at >= datetime('now', '-24 hours')"
         ).fetchone()[0]
+
+        # Топ-3 причины отказа за последнюю неделю
+        reject_rows = conn.execute(
+            """SELECT reject_reason, COUNT(*) as cnt
+               FROM articles
+               WHERE reject_reason IS NOT NULL
+                 AND created_at >= datetime('now', '-7 days')
+               GROUP BY reject_reason
+               ORDER BY cnt DESC
+               LIMIT 3"""
+        ).fetchall()
+        top_reject_reasons = [(r["reject_reason"], r["cnt"]) for r in reject_rows]
+
         return {
             "total": total, "pending": pending, "approved": approved,
             "rejected": rejected, "published": published, "today": today,
+            "top_reject_reasons": top_reject_reasons,
         }
 
 
@@ -580,6 +608,43 @@ def save_translation(source_text: str, translated_text: str, lang: str = "ru") -
             "INSERT OR REPLACE INTO translations (source_text, translated_text, lang) VALUES (?, ?, ?)",
             (source_text, translated_text, lang),
         )
+
+
+def count_translations_matching(pattern: str) -> int:
+    """Считает записи кеша, чей translated_text подходит под pattern (SQL LIKE, % — wildcard).
+
+    Для предпросмотра перед invalidate_translations_matching().
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM translations WHERE translated_text LIKE ?",
+            (pattern,),
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def invalidate_translations_matching(pattern: str) -> int:
+    """Удаляет из кеша переводы, чей translated_text содержит pattern (SQL LIKE, % — wildcard).
+
+    Нужно на случай будущих правок логики перевода (_fix_translation и
+    похожие): сам фикс применяется только к новым переводам — уже
+    закэшированные записи молча остаются со старым (возможно испорченным)
+    текстом навсегда, пока их явно не инвалидировать. Возвращает
+    количество удалённых строк.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM translations WHERE translated_text LIKE ?",
+            (pattern,),
+        )
+        return cur.rowcount
+
+
+def clear_translation_cache() -> int:
+    """Полностью очищает кеш переводов (например, после смены логики перевода целиком)."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM translations")
+        return cur.rowcount
 
 
 def save_draft(

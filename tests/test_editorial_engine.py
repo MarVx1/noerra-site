@@ -3,9 +3,18 @@ from parsers.base import RawArticle
 from adaptation.editorial_engine import (
     detect_scenario, build_editorial_text, EditorialEngine,
     Scenario,
+    LEAD_PATTERNS, TITLE_PATTERNS, WHY_PATTERNS, CAVEAT_PATTERNS,
+    PRACTICAL_OPENERS, PRACTICAL_FOOTERS, HONEST_NO_PRACTICAL_PATTERNS,
 )
-from adaptation.critic import EditorialCritic
+from adaptation.critic import EditorialCritic, HYPE_MARKERS, CANCELLERISM_MARKERS
 from adaptation.publication import Publication
+from adaptation.reader_question import QUESTION_PATTERNS, build_reader_question
+from adaptation.analogy_bank import TOPIC_ANALOGIES, GENERIC_ANALOGIES, build_analogy
+from adaptation.transitions import (
+    TRANSITION_INTO_BODY, TRANSITION_INTO_ANALOGY, TRANSITION_INTO_SIGNIFICANCE,
+    build_transition,
+)
+from classifier.classifier import _TOPIC_CASES
 
 
 class TestDetectScenario(unittest.TestCase):
@@ -185,8 +194,10 @@ class TestEditorialEngineBuildStructure(unittest.TestCase):
         structure = self.engine.build_structure(passport)
         # Caveat patterns are randomly chosen, check for any of them
         caveat_markers = [
-            "не финальный", "важный момент", "стоит помнить",
-            "не догма", "очередной шаг", "требует дальнейшей",
+            "не окончательный", "не догма", "очередной шаг",
+            "расширяют картину", "стоит помнить",
+            "требуют дальнейшей", "требует подтверждения",
+            "одно исследование",
         ]
         caveat_blocks = [s for s in structure if any(m in s.lower() for m in caveat_markers)]
         self.assertGreater(len(caveat_blocks), 0)
@@ -280,6 +291,7 @@ class TestEditorialCritic(unittest.TestCase):
             "evidence_strength": "high",
             "limitations": "Small sample.",
             "sources": "PubMed",
+            "analogy": "Dopamine works like a prediction system, not a reward button.",
         }
         # 18 words with 3 paragraph breaks = passes both checks
         text = (
@@ -294,6 +306,7 @@ class TestEditorialCritic(unittest.TestCase):
     def test_fails_low_confidence(self):
         passport = {
             "confidence_score": 0.2,
+            "evidence_strength": "weak",
             "publication_type": "article",
             "main_idea": "",
         }
@@ -302,15 +315,17 @@ class TestEditorialCritic(unittest.TestCase):
         self.assertTrue(any("Low confidence" in item for item in review["scientific"]))
 
     def test_fails_short_text(self):
+        """Short text is a soft problem — reported but does not block."""
         passport = {
             "confidence_score": 0.8,
             "main_idea": "Some idea",
             "evidence_strength": "high",
             "limitations": "Test limitation.",
             "sources": "Test source.",
+            "analogy": "This is like a test analogy.",
         }
         review = self.critic.review(passport, "Short text.")
-        self.assertFalse(review["passed"])
+        self.assertTrue(review["passed"])
         self.assertTrue(any("too short" in item.lower() for item in review["clarity"]))
 
     def test_fails_missing_main_idea(self):
@@ -378,6 +393,318 @@ class TestBuildEditorialText(unittest.TestCase):
         )
         text = build_editorial_text(article, "dopamine")
         self.assertTrue(text.split("\n")[0])
+
+
+class TestTemplatesDoNotContainBannedPhrases(unittest.TestCase):
+    """Regression guard: шаблоны генерации не должны содержать хайп/канцеляризмы
+    из EDITORIAL_ENGINE.md / EDITORIAL_PLAYBOOK.md (см. critic.HYPE_MARKERS /
+    CANCELLERISM_MARKERS). Защищает от повторения бага, когда собственные
+    шаблоны движка нарушали же те правила, которые проверяет критик.
+    """
+
+    def _assert_clean(self, name: str, text: str, banned: tuple[str, ...]):
+        low = text.lower()
+        for marker in banned:
+            self.assertNotIn(
+                marker, low,
+                f"{name!r} contains banned phrase {marker!r}: {text!r}",
+            )
+
+    def test_dict_pattern_banks_are_clean(self):
+        banned = HYPE_MARKERS + CANCELLERISM_MARKERS
+        for bank_name, bank in (
+            ("LEAD_PATTERNS", LEAD_PATTERNS),
+            ("TITLE_PATTERNS", TITLE_PATTERNS),
+        ):
+            for scenario, templates in bank.items():
+                for template in templates:
+                    self._assert_clean(f"{bank_name}[{scenario}]", template, banned)
+
+    def test_list_pattern_banks_are_clean(self):
+        banned = HYPE_MARKERS + CANCELLERISM_MARKERS
+        for bank_name, templates in (
+            ("WHY_PATTERNS", WHY_PATTERNS),
+            ("CAVEAT_PATTERNS", CAVEAT_PATTERNS),
+            ("PRACTICAL_OPENERS", PRACTICAL_OPENERS),
+            ("PRACTICAL_FOOTERS", PRACTICAL_FOOTERS),
+            ("HONEST_NO_PRACTICAL_PATTERNS", HONEST_NO_PRACTICAL_PATTERNS),
+        ):
+            for template in templates:
+                self._assert_clean(bank_name, template, banned)
+
+    def test_analogy_and_question_banks_are_clean(self):
+        banned = HYPE_MARKERS + CANCELLERISM_MARKERS
+        for topic, templates in TOPIC_ANALOGIES.items():
+            for template in templates:
+                self._assert_clean(f"TOPIC_ANALOGIES[{topic}]", template, banned)
+        for scenario, templates in GENERIC_ANALOGIES.items():
+            for template in templates:
+                self._assert_clean(f"GENERIC_ANALOGIES[{scenario}]", template, banned)
+        for scenario, templates in QUESTION_PATTERNS.items():
+            for template in templates:
+                self._assert_clean(f"QUESTION_PATTERNS[{scenario}]", template, banned)
+        for bank_name, templates in (
+            ("TRANSITION_INTO_BODY", TRANSITION_INTO_BODY),
+            ("TRANSITION_INTO_ANALOGY", TRANSITION_INTO_ANALOGY),
+            ("TRANSITION_INTO_SIGNIFICANCE", TRANSITION_INTO_SIGNIFICANCE),
+        ):
+            for template in templates:
+                self._assert_clean(bank_name, template, banned)
+
+
+class TestPracticalValueHonesty(unittest.TestCase):
+    """Practical Value (Stage 8): запрещено выдумывать советы — если реальной
+    практической пользы нет, текст должен честно об этом сообщать.
+    """
+
+    def test_no_fabricated_advice_when_no_practical_marker(self):
+        # Сценарий "practical" (триггер — слово "method"/"метод" из
+        # SCENARIO_MARKERS["practical"]), но без маркеров реальной
+        # практической пользы (recommend/should/helps/практич.../...) —
+        # decomposed["practical"] останется пустым, и должен сработать
+        # честный fallback, а не выдуманный совет.
+        article = RawArticle(
+            title="New method for recording neural signals",
+            url="https://example.com",
+            abstract=(
+                "This paper introduces a new method for recording electrical signals from neurons. "
+                "Researchers observed distinct pulse patterns in isolated brain tissue."
+            ),
+            source="pubmed",
+        )
+        engine = EditorialEngine()
+        passport = engine.analyze(article, "neuroscience")
+        self.assertEqual(passport["scenario"], "practical")
+        self.assertFalse(passport["practical_value"])
+        structure = engine.build_structure(passport)
+        text = "\n\n".join(structure)
+        # Старый баг: жёстко зашитая фраза-выдумка про "осознанные решения"
+        self.assertNotIn(
+            "Результат помогает принять более осознанные решения, связанные с этой темой.",
+            text,
+        )
+        self.assertTrue(
+            any(p in text for p in HONEST_NO_PRACTICAL_PATTERNS),
+            "Ожидалась честная формулировка об отсутствии практической пользы.",
+        )
+
+
+class TestReaderQuestion(unittest.TestCase):
+    """Reader Question (Stage 3): настоящий вопрос, а не утверждение."""
+
+    def test_all_scenarios_produce_a_question(self):
+        for scenario in QUESTION_PATTERNS:
+            question = build_reader_question("dopamine", scenario)
+            self.assertTrue(question.strip().endswith("?"), f"{scenario}: {question!r}")
+
+    def test_unknown_scenario_falls_back_to_discovery(self):
+        question = build_reader_question("dopamine", "not-a-real-scenario")
+        self.assertTrue(question.strip().endswith("?"))
+
+    def test_passport_reader_question_is_a_question(self):
+        article = RawArticle(
+            title="Dopamine and motivation",
+            url="https://example.com",
+            abstract="This research finds a link between dopamine and motivated behavior.",
+            source="pubmed",
+        )
+        engine = EditorialEngine()
+        passport = engine.analyze(article, "dopamine")
+        self.assertTrue(passport["reader_question"].strip().endswith("?"))
+        self.assertEqual(passport["key_question"], passport["reader_question"])
+
+    def test_reader_question_present_in_generated_text(self):
+        article = RawArticle(
+            title="Dopamine and motivation",
+            url="https://example.com",
+            abstract="This research finds a link between dopamine and motivated behavior.",
+            source="pubmed",
+        )
+        text = build_editorial_text(article, "dopamine")
+        engine = EditorialEngine()
+        passport = engine.analyze(article, "dopamine")
+        # Текст детерминирован по content, но вопрос выбирается случайно —
+        # проверяем структуру блоков напрямую, а не сгенерированный текст.
+        structure = engine.build_structure(passport)
+        self.assertIn(passport["reader_question"], structure)
+        # Инвариант, на который полагается scheduler.py: blocks[0] — заголовок.
+        self.assertEqual(structure[0], passport["title"])
+
+
+class TestAnalogyBank(unittest.TestCase):
+    """Analogy (Stage 7): обязательная аналогия для каждой публикуемой темы."""
+
+    def test_every_known_topic_has_an_analogy_bank(self):
+        for topic in _TOPIC_CASES:
+            self.assertIn(topic, TOPIC_ANALOGIES, f"Нет банка аналогий для темы {topic!r}")
+            self.assertTrue(TOPIC_ANALOGIES[topic], f"Пустой банк аналогий для темы {topic!r}")
+
+    def test_topic_analogy_banks_have_at_least_8_entries(self):
+        """Расширенный банк (Фаза после Editorial Polish) — минимум 8 на
+        тему, чтобы заметнее не повторяться при активной публикации."""
+        for topic in _TOPIC_CASES:
+            self.assertGreaterEqual(
+                len(TOPIC_ANALOGIES[topic]), 8,
+                f"Банк аналогий для {topic!r} меньше 8 записей",
+            )
+
+    def test_topic_analogy_banks_have_no_duplicates(self):
+        for topic, bank in TOPIC_ANALOGIES.items():
+            self.assertEqual(len(bank), len(set(bank)), f"Дубликаты в банке аналогий {topic!r}")
+
+    def test_topic_analogy_banks_respect_max_sentence_length(self):
+        """Аналогия — обычно одно длинное предложение (в отличие от прочих
+        шаблонов), поэтому легко случайно превысить лимит в 25 слов
+        (style_metrics.MAX_SENTENCE_WORDS) при добавлении новых записей."""
+        from adaptation.style_metrics import compute_style_metrics
+        for topic, bank in TOPIC_ANALOGIES.items():
+            for analogy in bank:
+                report = compute_style_metrics(analogy)
+                self.assertEqual(
+                    report.long_sentences, [],
+                    f"Аналогия для {topic!r} превышает лимит длины предложения: {analogy!r}",
+                )
+
+    def test_build_analogy_known_topic(self):
+        for topic in _TOPIC_CASES:
+            analogy = build_analogy(topic, "discovery")
+            self.assertTrue(analogy.strip())
+            self.assertIn(analogy, TOPIC_ANALOGIES[topic])
+
+    def test_build_analogy_unknown_topic_falls_back_to_generic(self):
+        for scenario in GENERIC_ANALOGIES:
+            analogy = build_analogy("not-a-real-topic", scenario)
+            self.assertTrue(analogy.strip())
+            self.assertIn(analogy, GENERIC_ANALOGIES[scenario])
+
+    def test_build_analogy_unknown_topic_and_scenario_never_crashes(self):
+        analogy = build_analogy("not-a-real-topic", "not-a-real-scenario")
+        self.assertTrue(analogy.strip())
+
+    def test_passport_contains_analogy(self):
+        article = RawArticle(
+            title="Dopamine and motivation",
+            url="https://example.com",
+            abstract="This research finds a link between dopamine and motivated behavior.",
+            source="pubmed",
+        )
+        engine = EditorialEngine()
+        passport = engine.analyze(article, "dopamine")
+        self.assertTrue(passport["analogy"].strip())
+        structure = engine.build_structure(passport)
+        self.assertTrue(any(passport["analogy"] in block for block in structure))
+
+
+class TestBuildNamedStructure(unittest.TestCase):
+    """Article Outline (Stage 4): именованные обязательные блоки."""
+
+    def setUp(self):
+        # Многопредложный абстракт: однопредложные абстракты — реалистичный
+        # краевой случай, когда всё содержание уходит в lead и
+        # what_science_found легитимно пуст (это soft, а не hard check).
+        self.article = RawArticle(
+            title="Dopamine and motivation",
+            url="https://example.com",
+            abstract=(
+                "This research finds a link between dopamine and motivated behavior. "
+                "The study used a sample of 40 participants performing a reward task. "
+                "Results suggest that dopamine release predicts effort investment."
+            ),
+            source="pubmed",
+        )
+        self.engine = EditorialEngine()
+
+    def test_all_required_blocks_present_and_non_empty(self):
+        passport = self.engine.analyze(self.article, "dopamine")
+        named = self.engine.build_named_structure(passport)
+        for key in ("hook", "reader_question", "what_science_found", "analogy", "why", "caveat"):
+            self.assertIn(key, named)
+            self.assertTrue(named[key].strip(), f"Block {key!r} is empty")
+
+    def test_build_structure_still_returns_plain_list(self):
+        """Низкорисковый вариант: build_structure() не меняет сигнатуру."""
+        passport = self.engine.analyze(self.article, "dopamine")
+        structure = self.engine.build_structure(passport)
+        self.assertIsInstance(structure, list)
+        self.assertTrue(all(isinstance(s, str) for s in structure))
+        self.assertEqual(structure[0], passport["title"])
+
+
+class TestCheckOutlineComplete(unittest.TestCase):
+    def setUp(self):
+        self.critic = EditorialCritic()
+        self.good_named_blocks = {
+            "hook": "Hook text.",
+            "reader_question": "Why does this matter?",
+            "what_science_found": "Science found this.",
+            "analogy": "This is like something familiar.",
+            "why": "Why block text.",
+            "caveat": "Caveat text.",
+        }
+
+    def test_complete_outline_has_no_issues(self):
+        issues = self.critic.check_outline_complete(self.good_named_blocks)
+        self.assertEqual(issues, [])
+
+    def test_missing_block_is_reported(self):
+        blocks = {**self.good_named_blocks, "analogy": ""}
+        issues = self.critic.check_outline_complete(blocks)
+        self.assertTrue(any("analogy" in issue for issue in issues))
+
+    def test_review_uses_named_blocks_when_provided(self):
+        passport = {
+            "confidence_score": 0.8,
+            "main_idea": "Some idea",
+            "evidence_strength": "high",
+            "limitations": "Test limitation.",
+            "sources": "Test source.",
+            "analogy": "Test analogy.",
+        }
+        text = (
+            "This is a long enough text for a publication that should pass the critic checks.\n\n"
+            "Here is some more content that adds to the overall length of this particular publication.\n\n"
+            "And here is a third paragraph with even more words to ensure the text is definitely long enough."
+        )
+        broken_blocks = {**self.good_named_blocks, "why": ""}
+        review = self.critic.review(passport, text, named_blocks=broken_blocks)
+        self.assertTrue(any("why" in issue for issue in review["outline"]))
+
+
+class TestTransitions(unittest.TestCase):
+    """Ритмические переходы (Editorial Polish, EDITORIAL_PLAYBOOK.md Правило 10)."""
+
+    def test_build_transition_known_kinds(self):
+        for kind, bank in (
+            ("into_body", TRANSITION_INTO_BODY),
+            ("into_analogy", TRANSITION_INTO_ANALOGY),
+            ("into_significance", TRANSITION_INTO_SIGNIFICANCE),
+        ):
+            transition = build_transition(kind)
+            self.assertIn(transition, bank)
+
+    def test_build_transition_unknown_kind_raises(self):
+        with self.assertRaises(ValueError):
+            build_transition("not-a-real-kind")
+
+    def test_structure_contains_transitions(self):
+        article = RawArticle(
+            title="Dopamine and motivation",
+            url="https://example.com",
+            abstract=(
+                "This research finds a link between dopamine and motivated behavior. "
+                "The study used a sample of 40 participants performing a reward task. "
+                "Results suggest that dopamine release predicts effort investment."
+            ),
+            source="pubmed",
+        )
+        engine = EditorialEngine()
+        passport = engine.analyze(article, "dopamine")
+        structure = engine.build_structure(passport)
+        self.assertTrue(any(b in TRANSITION_INTO_BODY for b in structure))
+        self.assertTrue(any(b in TRANSITION_INTO_ANALOGY for b in structure))
+        self.assertTrue(any(b in TRANSITION_INTO_SIGNIFICANCE for b in structure))
+        # Инвариант scheduler.py: blocks[0] — заголовок, не должен сдвинуться.
+        self.assertEqual(structure[0], passport["title"])
 
 
 if __name__ == '__main__':

@@ -1,11 +1,16 @@
 import unittest
 from parsers.base import RawArticle
-from knowledge.core import (
-    ResearchPassport, ScientificClaim, build_research_passport,
-    extract_scientific_claims, detect_study_type, classify_evidence_strength,
-    estimate_trust_level, normalize_claim, split_sentences,
+from domain.knowledge.entities import ResearchPassport, ScientificClaim
+from intelligence.research_analysis import (
+    build_research_passport,
+    extract_scientific_claims,
+    detect_study_type,
+    classify_evidence_strength,
+    normalize_claim,
+    split_sentences,
 )
-from knowledge.trust import assess_trust, TrustAssessment
+from intelligence.trust_engine import assess_trust, TrustAssessment
+from intelligence.trust_engine.trust_assessor import estimate_trust_level
 
 
 class TestResearchPassport(unittest.TestCase):

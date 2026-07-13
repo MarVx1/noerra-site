@@ -1,11 +1,11 @@
 import unittest
-from knowledge.living import (
+from domain.knowledge.living import (
     KnowledgeVersion, KnowledgeDiff, OpenQuestion, Myth,
     create_knowledge_version, create_knowledge_diff,
     create_open_question, create_myth,
     build_knowledge_summary, detect_open_questions, detect_myths_from_contradictions,
 )
-from knowledge.understanding import (
+from domain.knowledge.understanding import (
     UnderstandingModel, build_understanding_model, update_understanding_model,
     extract_practical_implications,
 )

@@ -1,9 +1,9 @@
 import unittest
-from knowledge.reasoning import (
+from domain.knowledge.reasoning import (
     ReasoningStep, ReasoningChain,
     build_reasoning_chain, chain_to_text, validate_chain,
 )
-from knowledge.routes import (
+from domain.knowledge.routes import (
     RouteStep, KnowledgeRoute,
     get_route, list_routes, build_route_from_topics,
     route_to_text, suggest_route_for_topic, get_topics_from_route,

@@ -1,4 +1,10 @@
-"""Knowledge Audit & Confidence Drift tracking."""
+"""
+Knowledge Audit & Confidence Drift tracking.
+
+Аналитический слой: аудит знаний, обнаружение устаревших тем,
+контроль дрейфа уверенности, выявление долгов знаний.
+"""
+
 import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any

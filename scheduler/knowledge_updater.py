@@ -1,12 +1,12 @@
 import logging
 from datetime import datetime
 from database import db
-from knowledge.living import (
+from domain.knowledge.living import (
     build_knowledge_summary,
     detect_open_questions,
     detect_myths_from_contradictions,
 )
-from knowledge.understanding import build_understanding_model
+from domain.knowledge.understanding import build_understanding_model
 from classifier.classifier import get_topic_ru
 
 logger = logging.getLogger(__name__)

@@ -73,17 +73,29 @@ class CyberLeninaParser(BaseParser):
                     verify=False,  # CyberLeninka имеет проблемы с SSL
                 )
                 if resp.status_code in (500, 502, 503):
-                    logger.debug(f"CyberLeninka API {resp.status_code} ({query})")
+                    logger.warning(f"CyberLeninka API server error {resp.status_code} ({query})")
                     break
                 if resp.status_code == 429:
                     logger.warning(f"CyberLeninka rate limited ({query})")
                     time.sleep(3)
                     continue
+                if resp.status_code != 200:
+                    logger.warning(f"CyberLeninka API unexpected status {resp.status_code} ({query})")
+                    break
                 resp.raise_for_status()
                 data = resp.json()
 
+                # Проверяем структуру ответа — API мог измениться
+                hits = data.get("hits", [])
+                if not hits and data:
+                    # Логируем ключи ответа для диагностики изменения схемы
+                    logger.warning(
+                        f"CyberLeninka API returned no hits for '{query}'. "
+                        f"Response keys: {list(data.keys())[:10]}"
+                    )
+
                 results = []
-                for hit in data.get("hits", []):
+                for hit in hits:
                     url = f"https://cyberleninka.ru/article/n/{hit.get('id', '')}"
                     if url in seen:
                         continue
@@ -97,12 +109,15 @@ class CyberLeninaParser(BaseParser):
                         is_peer_reviewed=True,
                     ))
                 return results
+            except requests.exceptions.JSONDecodeError:
+                logger.warning(f"CyberLeninka API returned non-JSON response ({query})")
+                break
             except Exception as e:
                 if attempt == 0:
                     logger.debug(f"CyberLeninka API retry ({query}): {e}")
                     time.sleep(2)
                 else:
-                    logger.debug(f"CyberLeninka API error ({query}): {e}")
+                    logger.warning(f"CyberLeninka API error ({query}): {e}")
         return []
 
     def _fetch_via_web(self, query: str, seen: set) -> list[RawArticle]:

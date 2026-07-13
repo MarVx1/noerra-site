@@ -112,18 +112,18 @@ def chain_to_text(chain: ReasoningChain) -> str:
     if chain.assumptions:
         lines.append("<b>Assumptions:</b>")
         for a in chain.assumptions:
-            lines.append(f"  • {a}")
+            lines.append(f"  \u2022 {a}")
         lines.append("")
 
     if chain.limitations:
         lines.append("<b>Limitations:</b>")
         for l in chain.limitations:
-            lines.append(f"  • {l}")
+            lines.append(f"  \u2022 {l}")
         lines.append("")
 
     lines.append("<b>Evidence Trail:</b>")
     for i, step in enumerate(chain.steps, 1):
-        emoji = {"evidence": "📚", "inference": "🔬", "assumption": "⚠️", "limitation": "⚠️"}.get(step.step_type, "•")
+        emoji = {"evidence": "\U0001f4da", "inference": "\U0001f52c", "assumption": "\u26a0\ufe0f", "limitation": "\u26a0\ufe0f"}.get(step.step_type, "\u2022")
         lines.append(f"  {emoji} Step {i} [{step.step_type}]: {step.description[:150]}")
         lines.append(f"      Confidence: {step.confidence:.2f} | Source: {step.source[:50]}")
 

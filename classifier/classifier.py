@@ -66,3 +66,88 @@ def get_topic_ru(topic: str) -> str:
         "neuroscience":     "Нейронаука",
         "psychology":       "Психология",
     }.get(topic, "Наука")
+
+
+# ── Падежные формы для тем ─────────────────────────────────────
+# Ключи: nom (именительный), gen (родительный), dat (дательный),
+#        acc (винительный), inst (творительный), prep (предложный)
+# _lower — вариант в нижнем регистре (для использования в середине предложения)
+
+_TOPIC_CASES: dict[str, dict[str, str]] = {
+    "ADHD": {
+        "nom": "СДВГ", "gen": "СДВГ", "dat": "СДВГ",
+        "acc": "СДВГ", "inst": "СДВГ", "prep": "СДВГ",
+        "nom_lower": "СДВГ", "gen_lower": "СДВГ",
+        "dat_lower": "СДВГ", "acc_lower": "СДВГ",
+        "inst_lower": "СДВГ", "prep_lower": "СДВГ",
+    },
+    "dopamine": {
+        "nom": "Дофамин", "gen": "Дофамина", "dat": "Дофамину",
+        "acc": "Дофамин", "inst": "Дофамином", "prep": "Дофамине",
+        "nom_lower": "дофамин", "gen_lower": "дофамина",
+        "dat_lower": "дофамину", "acc_lower": "дофамин",
+        "inst_lower": "дофамином", "prep_lower": "дофамине",
+    },
+    "sleep": {
+        "nom": "Сон", "gen": "Сна", "dat": "Сну",
+        "acc": "Сон", "inst": "Сном", "prep": "Сне",
+        "nom_lower": "сон", "gen_lower": "сна",
+        "dat_lower": "сну", "acc_lower": "сон",
+        "inst_lower": "сном", "prep_lower": "сне",
+    },
+    "stress": {
+        "nom": "Стресс", "gen": "Стресса", "dat": "Стрессу",
+        "acc": "Стресс", "inst": "Стрессом", "prep": "Стрессе",
+        "nom_lower": "стресс", "gen_lower": "стресса",
+        "dat_lower": "стрессу", "acc_lower": "стресс",
+        "inst_lower": "стрессом", "prep_lower": "стрессе",
+    },
+    "anxiety": {
+        "nom": "Тревожность", "gen": "Тревожности", "dat": "Тревожности",
+        "acc": "Тревожность", "inst": "Тревожностью", "prep": "Тревожности",
+        "nom_lower": "тревожность", "gen_lower": "тревожности",
+        "dat_lower": "тревожности", "acc_lower": "тревожность",
+        "inst_lower": "тревожностью", "prep_lower": "тревожности",
+    },
+    "cognition": {
+        "nom": "Когниция", "gen": "Когниции", "dat": "Когниции",
+        "acc": "Когницию", "inst": "Когницией", "prep": "Когниции",
+        "nom_lower": "когниция", "gen_lower": "когниции",
+        "dat_lower": "когниции", "acc_lower": "когницию",
+        "inst_lower": "когницией", "prep_lower": "когниции",
+    },
+    "neuroplasticity": {
+        "nom": "Нейропластичность", "gen": "Нейропластичности", "dat": "Нейропластичности",
+        "acc": "Нейропластичность", "inst": "Нейропластичностью", "prep": "Нейропластичности",
+        "nom_lower": "нейропластичность", "gen_lower": "нейропластичности",
+        "dat_lower": "нейропластичности", "acc_lower": "нейропластичность",
+        "inst_lower": "нейропластичностью", "prep_lower": "нейропластичности",
+    },
+    "neuroscience": {
+        "nom": "Нейронаука", "gen": "Нейронауки", "dat": "Нейронауке",
+        "acc": "Нейронауку", "inst": "Нейронаукой", "prep": "Нейронауке",
+        "nom_lower": "нейронаука", "gen_lower": "нейронауки",
+        "dat_lower": "нейронауке", "acc_lower": "нейронауку",
+        "inst_lower": "нейронаукой", "prep_lower": "нейронауке",
+    },
+    "psychology": {
+        "nom": "Психология", "gen": "Психологии", "dat": "Психологии",
+        "acc": "Психологию", "inst": "Психологией", "prep": "Психологии",
+        "nom_lower": "психология", "gen_lower": "психологии",
+        "dat_lower": "психологии", "acc_lower": "психологию",
+        "inst_lower": "психологией", "prep_lower": "психологии",
+    },
+}
+
+
+def get_topic_case(topic: str, case: str = "nom") -> str:
+    """Возвращает тему в указанном падеже.
+
+    Доступные падежи: nom, gen, dat, acc, inst, prep.
+    Добавьте '_lower' для варианта в нижнем регистре (например, 'gen_lower').
+    """
+    cases = _TOPIC_CASES.get(topic)
+    if cases:
+        return cases.get(case, cases.get("nom", topic))
+    # Fallback для неизвестных тем — возвращаем как есть
+    return get_topic_ru(topic)

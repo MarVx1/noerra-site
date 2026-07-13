@@ -187,7 +187,7 @@ def graph_to_text(graph: UnderstandingGraph, topic: str = None) -> str:
     if topic:
         graph = graph.get_subgraph_for_topic(topic)
 
-    lines = [f"🕸 <b>Understanding Graph</b> ({len(graph.nodes)} nodes, {len(graph.edges)} edges)\n"]
+    lines = [f"\U0001f578 <b>Understanding Graph</b> ({len(graph.nodes)} nodes, {len(graph.edges)} edges)\n"]
 
     type_groups: Dict[str, List[GraphNode]] = defaultdict(list)
     for node in graph.nodes.values():
@@ -208,7 +208,7 @@ def graph_to_text(graph: UnderstandingGraph, topic: str = None) -> str:
         if nodes:
             lines.append(f"<b>{label}:</b>")
             for node in nodes[:5]:
-                lines.append(f"  • {node.label}")
+                lines.append(f"  \u2022 {node.label}")
             if len(nodes) > 5:
                 lines.append(f"  ... и ещё {len(nodes) - 5}")
             lines.append("")

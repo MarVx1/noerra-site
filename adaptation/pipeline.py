@@ -2,7 +2,6 @@ from typing import Optional
 
 from parsers.base import RawArticle
 from adaptation.editorial_engine import EditorialEngine
-from adaptation.editorial_planner import EditorialPlanner
 from adaptation.critic import EditorialCritic
 from adaptation.publication import Publication
 from database import db
@@ -11,7 +10,6 @@ from database import db
 class Pipeline:
     def __init__(self):
         self.engine = EditorialEngine()
-        self.planner = EditorialPlanner()
         self.critic = EditorialCritic()
 
     def run_for_article(self, article: RawArticle, topic: str, article_id: Optional[int] = 0) -> dict:
@@ -21,9 +19,6 @@ class Pipeline:
         """
         # Analyze
         passport = self.engine.analyze(article, topic)
-
-        # Planner hints
-        plan = self.planner.plan_for_article(article)
 
         # Build structure & render
         structure = self.engine.build_structure(passport)
@@ -44,11 +39,12 @@ class Pipeline:
             topic=passport.get("topic", topic),
             format=passport.get("suggested_format", "analysis"),
             confidence_score=passport.get("confidence_score", 0.0) or 0.0,
-            audience=passport.get("audience", plan.get("audience", "general")),
+            audience=passport.get("audience", "general"),
         )
 
-        # Critic review
-        review = self.critic.review(passport, full_text)
+        # Critic review (+ Article Outline completeness check, Stage 4)
+        named_blocks = self.engine.build_named_structure(passport)
+        review = self.critic.review(passport, full_text, named_blocks=named_blocks)
 
         # Save draft to DB
         draft_id = db.save_draft(
@@ -69,6 +65,5 @@ class Pipeline:
             "draft_id": draft_id,
             "publication": pub,
             "review": review,
-            "plan": plan,
             "passport": passport,
         }

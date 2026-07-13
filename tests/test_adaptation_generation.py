@@ -20,7 +20,7 @@ class TestAdaptationGeneration(unittest.TestCase):
         article = self.make_article()
         text = generate_telegram_text(article, "dopamine", "https://telegra.ph/example")
         self.assertIn("💊", text)
-        self.assertIn("📘 https://telegra.ph/example", text)
+        self.assertIn("https://telegra.ph/example", text)
         self.assertIn("Почему это важно", text)
 
     def test_generate_telegraph_text_contains_original_link(self):
@@ -50,7 +50,7 @@ class TestAdaptationGeneration(unittest.TestCase):
             source="arxiv",
         )
         text = build_telegraph_cluster("dopamine", [article, article2], youtube_article=None)
-        self.assertIn("Тема:", text)
+        self.assertIn("Дофамин", text)
         self.assertIn("Оригинал:", text)
         self.assertIn("arXiv", text)
 

@@ -37,10 +37,10 @@ class KnowledgeTimeline:
         prev_confidence = 0.0
         for event in self.events:
             if abs(event.confidence_at_time - prev_confidence) > 0.3:
-                direction = "↑" if event.confidence_at_time > prev_confidence else "↓"
+                direction = "\u2191" if event.confidence_at_time > prev_confidence else "\u2193"
                 shifts.append(
                     f"{direction} {event.timestamp}: {event.title} "
-                    f"(confidence {prev_confidence:.2f} → {event.confidence_at_time:.2f})"
+                    f"(confidence {prev_confidence:.2f} \u2192 {event.confidence_at_time:.2f})"
                 )
                 prev_confidence = event.confidence_at_time
         return shifts
@@ -104,7 +104,7 @@ TIMELINE_TEMPLATES = {
         ],
         current_consensus="Дофамин кодирует ошибку прогнозирования вознаграждения и участвует в обучении и мотивации.",
         major_shifts=[
-            "1980s → 1990s: от 'удовольствия' к 'предсказанию'",
+            "1980s \u2192 1990s: от 'удовольствия' к 'предсказанию'",
             "2000s: подтверждение роли в обучении с подкреплением",
         ],
     ),
@@ -133,7 +133,7 @@ TIMELINE_TEMPLATES = {
                 confidence_at_time=0.7,
             ),
             TimelineEvent(
-                event_id="sleep_2010s",
+                event_id="sleep_2013",
                 event_type="discovery",
                 timestamp="2013",
                 title="Глимфатическая система",
@@ -207,7 +207,7 @@ TIMELINE_TEMPLATES = {
         ],
         current_consensus="СДВГ — нейробиологическое расстройство с генетической основой и структурными изменениями мозга.",
         major_shifts=[
-            "1900s → 1980s: от 'поведения' к 'нейробиологии'",
+            "1900s \u2192 1980s: от 'поведения' к 'нейробиологии'",
             "2000s: генетические доказательства",
         ],
     ),
@@ -227,26 +227,26 @@ def list_timelines() -> List[Dict[str, str]]:
 
 def timeline_to_text(timeline: KnowledgeTimeline) -> str:
     lines = [
-        f"📜 <b>История развития знаний: {timeline.topic_ru}</b>\n",
+        f"\U0001f4dc <b>История развития знаний: {timeline.topic_ru}</b>\n",
         f"<b>Текущий консенсус:</b> {timeline.current_consensus}\n",
     ]
 
     if timeline.major_shifts:
         lines.append("<b>Ключевые сдвиги:</b>")
         for shift in timeline.major_shifts:
-            lines.append(f"  • {shift}")
+            lines.append(f"  \u2022 {shift}")
         lines.append("")
 
     lines.append("<b>Хронология:</b>")
     for event in timeline.events:
         emoji = {
-            "hypothesis": "💭",
-            "discovery": "🔬",
-            "confirmation": "✅",
-            "contradiction": "⚡",
-            "consensus": "🎯",
-            "revision": "🔄",
-        }.get(event.event_type, "•")
+            "hypothesis": "\U0001f4ad",
+            "discovery": "\U0001f52c",
+            "confirmation": "\u2705",
+            "contradiction": "\u26a1",
+            "consensus": "\U0001f3af",
+            "revision": "\U0001f504",
+        }.get(event.event_type, "\u2022")
         lines.append(
             f"  {emoji} <b>{event.timestamp}</b>: {event.title}\n"
             f"      {event.description[:150]}"

@@ -1,5 +1,5 @@
 import unittest
-from knowledge.timeline import (
+from domain.knowledge.timeline import (
     TimelineEvent, KnowledgeTimeline,
     get_timeline, list_timelines, timeline_to_text,
     build_timeline_from_consensus, get_key_turning_points,

@@ -7,8 +7,9 @@ from parsers.youtube import format_youtube_block
 from classifier.classifier import get_topic_emoji, get_topic_ru
 from adaptation.utils import _translate, _extract_key_sentence, _clean_text, esc
 from adaptation.editorial_engine import EditorialEngine
-from adaptation.editorial_planner import EditorialPlanner
-from knowledge.mental_models import get_model_brief
+from domain.knowledge.mental_models import get_model_brief
+from intelligence.research_analysis.evidence_classifier import detect_study_type, classify_evidence_strength
+from classifier.classifier import get_topic_case
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +66,10 @@ def _snippet(article: RawArticle) -> str:
     return sentences[0] if sentences else _translate(article.title)
 
 
-def _headline(topic_ru: str, count: int) -> str:
+def _headline(topic: str, count: int) -> str:
     if count <= 1:
-        return f"Новый взгляд на {topic_ru.lower()}"
-    return f"Что важно знать о {topic_ru.lower()} сегодня"
+        return f"Новый взгляд на {get_topic_case(topic, 'acc_lower')}"
+    return f"Что важно знать о {get_topic_case(topic, 'prep_lower')} сегодня"
 
 
 def _collect_sources(articles: list[RawArticle]) -> str:
@@ -80,6 +81,25 @@ def _collect_sources(articles: list[RawArticle]) -> str:
     return ", ".join(unique)
 
 
+def _evidence_badge(articles: list[RawArticle]) -> str:
+    """Эмодзи-бейдж уровня доказательности на основе evidence_strength."""
+    if not articles:
+        return ""
+    a = articles[0]
+    text = f"{a.title} {a.abstract or ''}"
+    study_type = detect_study_type(text)
+    evidence = classify_evidence_strength(study_type, a.is_peer_reviewed)
+    badges = {
+        "high": "🔬 Сильная доказательность (метаанализ/RCT)",
+        "moderate_high": "🔬 Сильная доказательность (RCT)",
+        "moderate": "📝 Предварительные данные",
+        "limited": "📝 Предварительные данные",
+        "preliminary": "💭 Гипотеза/мнение",
+        "weak": "💭 Гипотеза/мнение",
+    }
+    return badges.get(evidence, "")
+
+
 def build_cluster_post(
     topic: str,
     articles: list[RawArticle],
@@ -88,15 +108,9 @@ def build_cluster_post(
 ) -> str:
     emoji = get_topic_emoji(topic)
     topic_ru = get_topic_ru(topic)
-    headline = _headline(topic_ru, len(articles))
-    intro = INTRO_TEXT.get(topic, f"Что нового в теме {topic_ru.lower()}?")
+    headline = _headline(topic, len(articles))
+    intro = INTRO_TEXT.get(topic, f"Что нового в теме «{get_topic_case(topic, 'nom_lower')}»?")
     hashtags = HASHTAGS.get(topic, "#наука #мозг")
-
-    # use planner to possibly adjust intro
-    planner = EditorialPlanner()
-    plan = planner.plan_cluster(topic, articles)
-    if plan.get("title_hint"):
-        intro = intro
 
     lines = [
         f"{emoji} <b>{headline}</b>",
@@ -121,6 +135,12 @@ def build_cluster_post(
                 lines.append(f"• <b>{_source_label(a)}:</b> {esc(_snippet(a))}")
             lines.append("")
 
+    # Индикатор уровня доказательности
+    badge = _evidence_badge(articles)
+    if badge:
+        lines.append(badge)
+        lines.append("")
+
     if youtube_article:
         # Prefer engine's youtube block if available
         try:
@@ -144,7 +164,7 @@ def build_cluster_post(
 
     # Confidence drift indicator
     try:
-        from knowledge.audit import track_confidence_drift
+        from intelligence.knowledge_audit import track_confidence_drift
         drifts = track_confidence_drift(topic)
         significant = [d for d in drifts if d.direction != "stable" and abs(d.delta) >= 0.15]
         if significant:

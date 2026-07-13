@@ -158,3 +158,40 @@ def assess_trust(
         reasons=reasons,
         cautions=cautions,
     )
+
+
+
+def estimate_trust_level(
+    evidence_strength: str,
+    peer_reviewed: bool,
+) -> float:
+    """
+    Упрощённая оценка уровня доверия.
+
+    Возвращает числовое значение trust level
+    на основе силы доказательств и peer-review.
+    Используется в ResearchPassport для быстрой
+    оценки без полного TrustAssessment.
+    """
+
+    score = {
+        "high": 0.9,
+        "moderate_high": 0.8,
+        "moderate": 0.65,
+        "limited": 0.45,
+        "preliminary": 0.35,
+        "weak": 0.25,
+    }.get(
+        evidence_strength,
+        0.4,
+    )
+
+    if peer_reviewed:
+        score += 0.05
+    else:
+        score -= 0.05
+
+    return round(
+        max(0.0, min(score, 1.0)),
+        2,
+    )

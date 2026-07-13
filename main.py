@@ -60,10 +60,27 @@ async def main():
     try:
         await dp.start_polling(get_bot())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Остановка...")
+        logger.info("Остановка по команде пользователя...")
+    except asyncio.CancelledError:
+        # CancelledError НЕ наследуется от Exception (начиная с Python 3.8),
+        # поэтому его нужно ловить отдельно — иначе он пролетает мимо except
+        # Exception ниже и всплывает уже наверху, в asyncio.run(), пугающим
+        # трейсбеком, хотя реальное завершение к этому моменту уже прошло штатно.
+        logger.info("Опрос отменён (сетевой сбой или отмена задачи).")
+    except Exception as e:
+        # Раньше сюда попадали, например, сетевые обрывы (TelegramNetworkError) —
+        # они не относятся к KeyboardInterrupt/SystemExit, поэтому проскакивали
+        # мимо except выше прямо в finally, а там stop_polling() падал повторно
+        # с "Polling is not started", и настоящая причина терялась в трейсбеке.
+        logger.error(f"Бот остановлен из-за ошибки: {e}")
     finally:
         scheduler.shutdown()
-        await dp.stop_polling()
+        try:
+            await dp.stop_polling()
+        except RuntimeError:
+            # polling уже остановлен сам (например, из-за сетевой ошибки выше) —
+            # это ожидаемо и не является дополнительной проблемой
+            pass
         await get_bot().session.close()
         logger.info("Noerra остановлена")
 

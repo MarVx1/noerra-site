@@ -127,7 +127,7 @@ def build_editorial_memory(decisions: List[Dict]) -> EditorialMemory:
 
 
 def memory_to_text(memory: EditorialMemory) -> str:
-    lines = ["📋 <b>Editorial Memory</b>\n"]
+    lines = ["\U0001f4cb <b>Editorial Memory</b>\n"]
 
     stats = memory.get_statistics()
     lines.append(f"<b>Всего решений:</b> {stats.get('total', 0)}")
@@ -141,9 +141,9 @@ def memory_to_text(memory: EditorialMemory) -> str:
     if memory.patterns:
         lines.append("<b>Паттерны:</b>")
         for p in memory.patterns[:5]:
-            lines.append(f"  • {p.description} (частота: {p.frequency})")
+            lines.append(f"  \u2022 {p.description} (частота: {p.frequency})")
             if p.recommendation:
-                lines.append(f"    <i>→ {p.recommendation}</i>")
+                lines.append(f"    <i>\u2192 {p.recommendation}</i>")
         lines.append("")
 
     return "\n".join(lines)

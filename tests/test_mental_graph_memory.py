@@ -1,13 +1,13 @@
 import unittest
-from knowledge.mental_models import (
+from domain.knowledge.mental_models import (
     MentalModel, get_mental_model, list_mental_models,
     model_to_text, get_model_brief,
 )
-from knowledge.graph import (
+from domain.knowledge.graph import (
     GraphNode, GraphEdge, UnderstandingGraph,
     build_graph_from_claims, graph_to_text,
 )
-from knowledge.editorial_memory import (
+from domain.knowledge.editorial_memory import (
     EditorialDecision, Pattern, EditorialMemory,
     build_editorial_memory, memory_to_text,
 )

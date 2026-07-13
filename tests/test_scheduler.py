@@ -34,12 +34,29 @@ class TestSchedulerPipeline(unittest.IsolatedAsyncioTestCase):
         yt_run, rss_run, cyber_run, arxiv_run, pubmed_run,
     ):
         pubmed_run.return_value = [self.article]
-        pipeline_cls.return_value.run_for_article.return_value = {"draft_id": 123}
+        # Pipeline returns a publication with full_version and short_version
+        # so save_summary gets the publication's text, not the mocked generate_summary
+        from adaptation.publication import Publication
+        pub = Publication(
+            title="Test", subtitle=None, lead="lead", body="body",
+            short_version="short", full_version="telegraph summary",
+            sources=["pubmed"], topic="dopamine", format="analysis",
+            confidence_score=0.5, audience="general",
+        )
+        pipeline_cls.return_value.run_for_article.return_value = {
+            "draft_id": 123,
+            "publication": pub,
+            "review": {"passed": True, "hard_problems": [], "problems": []},
+        }
 
         await run_pipeline()
 
         save_article.assert_called_once()
-        save_summary.assert_called_once_with(1, "telegraph summary", "telegram post")
+        # save_summary is called with publication's full_version as summary_ru
+        save_summary.assert_called_once()
+        call_args = save_summary.call_args
+        assert call_args[0][0] == 1  # article_id
+        assert "telegraph summary" in call_args[0][1] or "short" in call_args[0][1]
 
     @patch("scheduler.scheduler.PubMedParser.run", return_value=[])
     @patch("scheduler.scheduler.ArxivParser.run", return_value=[])

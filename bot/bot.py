@@ -12,6 +12,8 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 
+from adaptation.utils import _shorten as safe_shorten
+
 from config.settings import (
     BOT_TOKEN, ADMIN_CHAT_ID,
     MIN_SCORE_TO_MODERATE, TOP_PER_TOPIC, MAX_TOPICS_IN_DIGEST,
@@ -23,19 +25,27 @@ from database.db import (
     get_claims_for_topic, get_open_questions, get_myths,
     get_latest_knowledge_version, get_knowledge_history,
     get_reasoning_chain,
+    count_translations_matching, invalidate_translations_matching,
 )
 from classifier.classifier import get_topic_ru
 from publisher.publisher import create_telegraph_page, send_to_channel
 
 logger = logging.getLogger(__name__)
 
-# Bot + Dispatcher — глобальные объекты, как это задумано aiogram 3.x
-bot = Bot(token=BOT_TOKEN)
-dp  = Dispatcher()
+dp = Dispatcher()
+
+# Ленивая инициализация Bot — тот же приём, что и в publisher.get_bot().
+# Bot(token=...) валидирует токен сразу и падает с TokenValidationError на
+# пустом BOT_TOKEN. Если создавать его на уровне модуля, то `import bot.bot`
+# рушится без .env — и вместе с ним падают даже тесты, не касающиеся Telegram.
+_bot_instance: Bot | None = None
 
 
 def get_bot() -> Bot:
-    return bot
+    global _bot_instance
+    if _bot_instance is None:
+        _bot_instance = Bot(token=BOT_TOKEN)
+    return _bot_instance
 
 # Приводим ADMIN_CHAT_ID к числу один раз при старте —
 # защищает от ошибки, если в settings.py он случайно указан как строка "123456789"
@@ -196,7 +206,7 @@ async def send_for_moderation(article_id: int):
     )
 
     try:
-        await bot.send_message(
+        await get_bot().send_message(
             chat_id=ADMIN_ID,
             text=text,
             parse_mode="HTML",
@@ -223,25 +233,26 @@ async def send_draft_for_editor(draft_id: int):
     lead_text = draft.get('lead') or ""
     body_text = draft.get('body') or ""
     
-    # Формируем полноценный preview
+    # Формируем полноценный preview — обрезка по границе предложения,
+    # чтобы текст не рвался на полуслове
     preview_parts = []
     if lead_text:
-        preview_parts.append(f"<b>Лид:</b> {html_escape(lead_text[:400])}")
+        preview_parts.append(f"<b>Лид:</b> {html_escape(safe_shorten(lead_text, 400))}")
     if short_text:
-        preview_parts.append(f"\n<b>Краткая версия:</b>\n{html_escape(short_text[:800])}")
+        preview_parts.append(f"\n<b>Краткая версия:</b>\n{html_escape(safe_shorten(short_text, 800))}")
     if body_text:
-        preview_parts.append(f"\n<b>Основной текст:</b>\n{html_escape(body_text[:800])}")
+        preview_parts.append(f"\n<b>Основной текст:</b>\n{html_escape(safe_shorten(body_text, 800))}")
     if full_text and len(full_text) > len(short_text):
-        preview_parts.append(f"\n<b>Полная версия (фрагмент):</b>\n{html_escape(full_text[:600])}")
+        preview_parts.append(f"\n<b>Полная версия (фрагмент):</b>\n{html_escape(safe_shorten(full_text, 600))}")
     
     # Если всё ещё мало текста, берём ещё
-    combined_preview = "\n\n".join(preview_parts) if preview_parts else html_escape(full_text[:1500])
+    combined_preview = "\n\n".join(preview_parts) if preview_parts else html_escape(safe_shorten(full_text, 1500))
     if len(combined_preview) < 1000 and full_text:
-        combined_preview = html_escape(full_text[:2000])
+        combined_preview = html_escape(safe_shorten(full_text, 2000))
     
-    # Обрезаем до разумного предела (Telegram limit ~4096)
+    # Обрезаем до разумного предела (Telegram limit ~4096) — тоже по границе предложения
     if len(combined_preview) > 3800:
-        combined_preview = combined_preview[:3800] + "\n\n... (продолжение в Telegraph)"
+        combined_preview = safe_shorten(combined_preview, 3800) + "\n\n... (продолжение в Telegraph)"
     
     # Источники
     source_line = f"\n<b>Источники:</b> {html_escape(draft.get('sources', ''))}" if draft.get('sources') else ""
@@ -315,7 +326,7 @@ async def send_draft_for_editor(draft_id: int):
     )
 
     try:
-        await bot.send_message(
+        await get_bot().send_message(
             chat_id=ADMIN_ID,
             text=text,
             parse_mode="HTML",
@@ -392,15 +403,64 @@ async def cmd_stats(message: Message):
     if not is_admin(message.from_user.id):
         return
     s = get_stats()
+    reject_lines = ""
+    top_reasons = s.get("top_reject_reasons", [])
+    if top_reasons:
+        reject_lines = "\n\n<b>Топ-3 причины отказа (за неделю):</b>\n"
+        for i, (reason, cnt) in enumerate(top_reasons, 1):
+            reject_lines += f"  {i}. {reason} ({cnt})\n"
     await message.answer(
         f"📊 <b>Статистика Noerra</b>\n\n"
         f"Всего в базе:   {s['total']}\n"
         f"На модерации:   {s['pending']}\n"
         f"Одобрено:       {s['approved']}\n"
         f"Отклонено:      {s['rejected']}\n"
-        f"Опубликовано:   {s['published']}",
+        f"Опубликовано:   {s['published']}"
+        f"{reject_lines}",
         parse_mode="HTML",
     )
+
+
+@dp.message(Command("invalidate_cache"))
+async def cmd_invalidate_cache(message: Message):
+    """Точечная очистка кеша переводов (database.translations) по подстроке.
+
+    Нужна на случай, если правка логики перевода (_fix_translation и
+    похожее) не должна молча оставлять уже закэшированные до правки
+    некорректные переводы навсегда. Двухшаговое подтверждение — команда
+    удаляет из БД без возможности отмены.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "Использование: /invalidate_cache &lt;подстрока&gt; [confirm]\n"
+            "Например: /invalidate_cache наградум\n\n"
+            "Сначала покажет, сколько записей кеша перевода содержат эту подстроку. "
+            "Чтобы реально удалить — повторить команду с confirm в конце.",
+            parse_mode="HTML",
+        )
+        return
+
+    substring = parts[1].strip()
+    confirmed = len(parts) > 2 and parts[2].strip().lower() == "confirm"
+    pattern = f"%{substring}%"
+
+    if not confirmed:
+        count = count_translations_matching(pattern)
+        if count == 0:
+            await message.answer(f"📭 Записей кеша с «{html_escape(substring)}» не найдено.")
+            return
+        await message.answer(
+            f"⚠️ Найдено {count} запис(ей) кеша перевода с «{html_escape(substring)}».\n"
+            f"Чтобы удалить: /invalidate_cache {html_escape(substring)} confirm"
+        )
+        return
+
+    deleted = invalidate_translations_matching(pattern)
+    await message.answer(f"🗑 Удалено {deleted} запис(ей) кеша перевода с «{html_escape(substring)}».")
 
 
 @dp.message(Command("help"))
@@ -428,7 +488,9 @@ async def cmd_help(message: Message):
         "/timeline [тема] — история развития знаний\n\n"
         "<b>Аудит:</b>\n"
         "/audit — аудит базы знаний\n"
-        "/memory — редакционная память",
+        "/memory — редакционная память\n\n"
+        "<b>Обслуживание:</b>\n"
+        "/invalidate_cache &lt;подстрока&gt; [confirm] — очистить кеш перевода по подстроке",
         parse_mode="HTML",
     )
 
@@ -471,7 +533,7 @@ async def cmd_knowledge(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    from knowledge.audit import audit_all_topics
+    from intelligence.knowledge_audit import audit_all_topics
 
     audits = audit_all_topics(stale_days=30)
     if not audits:
@@ -583,7 +645,7 @@ async def cmd_audit(message: Message):
 
     # Запускаем тяжёлый аудит в отдельном потоке
     async def run_audit():
-        from knowledge.audit import audit_all_topics, detect_knowledge_debt, track_confidence_drift
+        from intelligence.knowledge_audit import audit_all_topics, detect_knowledge_debt, track_confidence_drift
 
         audits = audit_all_topics(stale_days=30)
         if not audits:
@@ -649,7 +711,7 @@ async def cmd_route(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    from knowledge.routes import list_routes, get_route, route_to_text, suggest_route_for_topic
+    from domain.knowledge.routes import list_routes, get_route, route_to_text, suggest_route_for_topic
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
@@ -694,7 +756,7 @@ async def cmd_reasoning(message: Message):
         await message.answer(f"📭 Нет утверждений для темы «{html_escape(topic)}».")
         return
 
-    from knowledge.reasoning import build_reasoning_chain, chain_to_text
+    from domain.knowledge.reasoning import build_reasoning_chain, chain_to_text
     from database.db import get_consensus_for_topic
 
     top_claim = claims[0]
@@ -724,7 +786,7 @@ async def cmd_model(message: Message):
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        from knowledge.mental_models import list_mental_models
+        from domain.knowledge.mental_models import list_mental_models
         models = list_mental_models()
         if not models:
             await message.answer("📭 Модели понимания пока не настроены.")
@@ -735,7 +797,7 @@ async def cmd_model(message: Message):
         await message.answer("\n".join(lines), parse_mode="HTML")
         return
 
-    from knowledge.mental_models import get_mental_model, model_to_text
+    from domain.knowledge.mental_models import get_mental_model, model_to_text
     topic = parts[1].strip().lower()
     model = get_mental_model(topic)
     if not model:
@@ -763,7 +825,7 @@ async def cmd_graph(message: Message):
     await message.answer(f"🕸 Строю граф для темы «{html_escape(topic)}»...")
 
     async def build_graph():
-        from knowledge.graph import build_graph_from_claims, graph_to_text
+        from domain.knowledge.graph import build_graph_from_claims, graph_to_text
         from database.db import get_consensus_for_topic
 
         claims = get_claims_for_topic(topic, limit=20)
@@ -802,7 +864,7 @@ async def cmd_memory(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    from knowledge.editorial_memory import build_editorial_memory, memory_to_text
+    from domain.knowledge.editorial_memory import build_editorial_memory, memory_to_text
     from database.db import get_editorial_decisions
 
     decisions_rows = get_editorial_decisions(limit=100)
@@ -822,7 +884,7 @@ async def cmd_timeline(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    from knowledge.timeline import get_timeline, list_timelines, timeline_to_text
+    from domain.knowledge.timeline import get_timeline, list_timelines, timeline_to_text
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
@@ -862,7 +924,6 @@ async def on_approve(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + suffix,
-            parse_mode="HTML",
         )
         logger.info(f"Article {article_id} published successfully: {result}")
     except Exception as e:
@@ -884,7 +945,6 @@ async def on_reject(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ Отклонено",
-            parse_mode="HTML",
         )
         logger.info(f"Article {article_id} rejected")
     except Exception as e:
@@ -915,9 +975,12 @@ async def on_draft_approve(callback: CallbackQuery):
     keyboard = draft_publish_keyboard(draft_id)
     await callback.answer("Одобрено! Теперь можно опубликовать.", show_alert=False)
     try:
+        # ВАЖНО: не используем parse_mode="HTML" — callback.message.text это
+        # уже plain text (с literal <b>, </b>, <a href='...'> из &lt;b&gt; и т.д.),
+        # а parse_mode="HTML" заставит Telegram попытаться распартировать эти
+        # символы как HTML-теги, что вызовет "Unexpected end tag".
         await callback.message.edit_text(
-            callback.message.text + "\n\n✅ <b>Одобрено</b>\n\n<i>Нажмите «Опубликовать в канал», чтобы отправить статью.</i>",
-            parse_mode="HTML",
+            callback.message.text + "\n\n✅ Одобрено\n\nНажмите «Опубликовать в канал», чтобы отправить статью.",
             reply_markup=keyboard,
         )
         logger.info(f"Draft {draft_id} approved, publish button shown")
@@ -951,7 +1014,6 @@ async def on_draft_reject(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + f"\n\n❌ Отклонено ({reason})",
-            parse_mode="HTML",
         )
         logger.info(f"Draft {draft_id} rejected: {reason}")
     except Exception as e:
@@ -974,10 +1036,11 @@ async def on_draft_edit(callback: CallbackQuery):
         update_article_status(draft["article_id"], "edit_requested")
 
     await callback.answer("Редактирование запрошено")
+    keyboard = draft_publish_keyboard(draft_id)
     try:
         await callback.message.edit_text(
-            callback.message.text + "\n\n✏️ Редактирование запрошено",
-            parse_mode="HTML",
+            callback.message.text + "\n\n✏️ Редактирование запрошено\n\nПосле редакции нажмите «Опубликовать в канал».",
+            reply_markup=keyboard,
         )
     except Exception:
         pass
@@ -1013,8 +1076,7 @@ async def on_draft_publish(callback: CallbackQuery):
     if ok:
         try:
             await callback.message.edit_text(
-                callback.message.text + f"\n\n📤 <b>Опубликовано в канал</b>\n🔗 {result}",
-                parse_mode="HTML",
+                callback.message.text + f"\n\n📤 Опубликовано в канал\n🔗 {result}",
             )
             logger.info(f"Draft {draft_id} published to channel: {result}")
         except Exception as e:
@@ -1022,8 +1084,7 @@ async def on_draft_publish(callback: CallbackQuery):
     else:
         try:
             await callback.message.edit_text(
-                callback.message.text + f"\n\n❌ <b>Ошибка публикации:</b> {result}",
-                parse_mode="HTML",
+                callback.message.text + f"\n\n❌ Ошибка публикации: {result}",
             )
         except Exception:
             pass
@@ -1041,7 +1102,6 @@ async def on_digest_approve(callback: CallbackQuery):
     await callback.answer(f"Публикую {len(ids)} статей...")
     await callback.message.edit_text(
         callback.message.text + f"\n\n⏳ Публикую {len(ids)} статей...",
-        parse_mode="HTML",
     )
 
     ok_count = 0
@@ -1054,7 +1114,6 @@ async def on_digest_approve(callback: CallbackQuery):
         await callback.message.edit_text(
             callback.message.text.replace(f"⏳ Публикую {len(ids)} статей...", "") +
             f"\n\n✅ Опубликовано: {ok_count} из {len(ids)}",
-            parse_mode="HTML",
         )
     except Exception:
         pass
@@ -1069,7 +1128,6 @@ async def on_digest_one_by_one(callback: CallbackQuery):
     await callback.answer("Отправляю по одной...")
     await callback.message.edit_text(
         callback.message.text + f"\n\n📋 Отправляю {len(ids)} статей по одной...",
-        parse_mode="HTML",
     )
     for article_id in ids:
         await send_for_moderation(article_id)
@@ -1083,7 +1141,6 @@ async def on_digest_reject_all(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ Дайджест пропущен",
-            parse_mode="HTML",
         )
     except Exception:
         pass
@@ -1093,7 +1150,7 @@ async def on_digest_reject_all(callback: CallbackQuery):
 
 async def start_bot():
     logger.info("Бот запущен")
-    await dp.start_polling(bot)
+    await dp.start_polling(get_bot())
 
 
 # ── Кнопки кластерного поста ──────────────────────────────────
@@ -1121,8 +1178,7 @@ async def on_cluster_approve(callback: CallbackQuery):
     await callback.answer()
     try:
         await callback.message.edit_text(
-            callback.message.text + "\n\n⚠️ <b>Подтвердите публикацию кластера?</b>",
-            parse_mode="HTML",
+            callback.message.text + "\n\n⚠️ Подтвердите публикацию кластера?",
             reply_markup=confirm_keyboard,
         )
     except Exception:
@@ -1185,7 +1241,6 @@ async def on_cluster_confirm(callback: CallbackQuery):
     if not telegraph_url:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ Ошибка Telegraph",
-            parse_mode="HTML",
         )
         return
 
@@ -1206,7 +1261,6 @@ async def on_cluster_confirm(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + f"\n\n✅ Опубликовано → {telegraph_url}",
-            parse_mode="HTML",
         )
     except Exception:
         pass
@@ -1225,7 +1279,6 @@ async def on_cluster_reject(callback: CallbackQuery):
     try:
         await callback.message.edit_text(
             callback.message.text + "\n\n❌ Пропущено",
-            parse_mode="HTML",
         )
     except Exception:
         pass

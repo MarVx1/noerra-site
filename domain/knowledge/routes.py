@@ -125,17 +125,17 @@ def build_route_from_topics(topic_sequence: List[str], title: str = "") -> Knowl
 def route_to_text(route: KnowledgeRoute) -> str:
     """Convert route to human-readable text."""
     lines = [
-        f"📚 <b>{route.title}</b>",
+        f"\U0001f4da <b>{route.title}</b>",
         f"<i>{route.description}</i>",
-        f"🎯 Аудитория: {route.target_audience}",
-        f"⏱ Общее время: {route.total_time}",
+        f"\U0001f3af Аудитория: {route.target_audience}",
+        f"\u23f1 Общее время: {route.total_time}",
         "",
     ]
 
     if route.prerequisites:
         lines.append("<b>Требования:</b>")
         for p in route.prerequisites:
-            lines.append(f"  • {p}")
+            lines.append(f"  \u2022 {p}")
         lines.append("")
 
     lines.append("<b>Шаги:</b>")
@@ -149,7 +149,7 @@ def route_to_text(route: KnowledgeRoute) -> str:
     if route.outcomes:
         lines.append("<b>Результаты:</b>")
         for o in route.outcomes:
-            lines.append(f"  • {o}")
+            lines.append(f"  \u2022 {o}")
 
     return "\n".join(lines)
 

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from knowledge.audit import (
+from intelligence.knowledge_audit import (
     TopicAudit, ConfidenceDrift,
     audit_topic, audit_all_topics,
     detect_stale_topics, detect_contradicted_topics,
@@ -36,7 +36,7 @@ class TestRecommendationBuilder(unittest.TestCase):
 
 
 class TestAuditTopic(unittest.TestCase):
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_audit_empty_topic(self, mock_db):
         mock_db.get_claims_for_topic.return_value = []
         mock_db.get_consensus_for_topic.return_value = []
@@ -50,7 +50,7 @@ class TestAuditTopic(unittest.TestCase):
         self.assertTrue(audit.is_stale)
         self.assertEqual(audit.consensus_level, "insufficient_data")
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_audit_with_data(self, mock_db):
         mock_db.get_claims_for_topic.return_value = [
             {"id": 1, "claim_text": "Sleep improves memory.", "consensus_level": "supported"},
@@ -70,7 +70,7 @@ class TestAuditTopic(unittest.TestCase):
         self.assertEqual(audit.open_questions_count, 1)
         self.assertEqual(audit.myths_count, 1)
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_audit_all_topics(self, mock_db):
         mock_db.execute_query.return_value = [{"topic": "sleep"}, {"topic": "dopamine"}]
         mock_db.get_claims_for_topic.return_value = []
@@ -83,7 +83,7 @@ class TestAuditTopic(unittest.TestCase):
         self.assertEqual(len(audits), 2)
         self.assertEqual(audits[0].topic, "sleep")
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_detect_stale_topics(self, mock_db):
         mock_db.execute_query.return_value = [{"topic": "sleep"}]
         mock_db.get_claims_for_topic.return_value = []
@@ -95,7 +95,7 @@ class TestAuditTopic(unittest.TestCase):
         stale = detect_stale_topics(stale_days=30)
         self.assertIn("sleep", stale)
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_detect_contradicted_topics(self, mock_db):
         mock_db.execute_query.return_value = [{"topic": "dopamine"}]
         mock_db.get_claims_for_topic.return_value = [{"id": 1, "claim_text": "Test."}]
@@ -111,7 +111,7 @@ class TestAuditTopic(unittest.TestCase):
 
 
 class TestConfidenceDrift(unittest.TestCase):
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_drift_decreased(self, mock_db):
         mock_db.get_consensus_for_topic.return_value = [
             {"claim_id": 1, "confidence": 0.8, "version": 1},
@@ -126,7 +126,7 @@ class TestConfidenceDrift(unittest.TestCase):
         self.assertEqual(drifts[0].direction, "decreased")
         self.assertLess(drifts[0].delta, 0)
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_drift_increased(self, mock_db):
         mock_db.get_consensus_for_topic.return_value = [
             {"claim_id": 1, "confidence": 0.3, "version": 1},
@@ -140,7 +140,7 @@ class TestConfidenceDrift(unittest.TestCase):
         self.assertEqual(len(drifts), 1)
         self.assertEqual(drifts[0].direction, "increased")
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_drift_stable(self, mock_db):
         mock_db.get_consensus_for_topic.return_value = [
             {"claim_id": 1, "confidence": 0.6, "version": 1},
@@ -154,7 +154,7 @@ class TestConfidenceDrift(unittest.TestCase):
         self.assertEqual(len(drifts), 1)
         self.assertEqual(drifts[0].direction, "stable")
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_no_drift_with_one_state(self, mock_db):
         mock_db.get_consensus_for_topic.return_value = [
             {"claim_id": 1, "confidence": 0.5, "version": 1},
@@ -166,7 +166,7 @@ class TestConfidenceDrift(unittest.TestCase):
 
 
 class TestKnowledgeDebt(unittest.TestCase):
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_detect_debt(self, mock_db):
         mock_db.execute_query.return_value = [{"topic": "sleep", "cnt": 5}]
         mock_db.get_latest_knowledge_version.return_value = None
@@ -176,7 +176,7 @@ class TestKnowledgeDebt(unittest.TestCase):
         self.assertEqual(debt[0]["topic"], "sleep")
         self.assertEqual(debt[0]["new_articles"], 5)
 
-    @patch("knowledge.audit.db")
+    @patch("intelligence.knowledge_audit.audit_engine.db")
     def test_no_debt_when_recent_update(self, mock_db):
         mock_db.execute_query.return_value = [{"topic": "sleep", "cnt": 5}]
         mock_db.get_latest_knowledge_version.return_value = {"created_at": "2099-01-01 10:00:00"}

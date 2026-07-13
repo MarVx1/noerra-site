@@ -74,7 +74,7 @@ def build_knowledge_summary(claims: List[Dict[str, Any]], consensus_states: List
     return (
         f"Topic has {len(claims)} scientific claims. "
         f"Evidence shows {total_support} supporting and {total_contradict} contradicting findings. "
-        f"{high_confidence} claims have high confidence (≥0.6)."
+        f"{high_confidence} claims have high confidence (>=0.6)."
     )
 
 

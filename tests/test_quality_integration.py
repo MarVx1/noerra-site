@@ -33,10 +33,11 @@ class TestQualityIntegration(unittest.TestCase):
         text = self.engine.generate_text(passport, self.engine.build_structure(passport))
         review = self.critic.review(passport, text)
 
-        # Low confidence (≤0.35) should be flagged
-        self.assertIn("Low confidence", " ".join(review["scientific"]))
-        # Article may still pass if only 1 issue (lenient for preprints/early research)
-        self.assertIsInstance(review, dict)
+        # Low confidence with preliminary evidence → soft problem "Limited evidence"
+        scientific_text = " ".join(review["scientific"])
+        self.assertTrue("Limited evidence" in scientific_text or "Low confidence" in scientific_text)
+        # Article should pass (soft problem, not hard)
+        self.assertTrue(review["passed"])
 
     def test_editorial_critic_passes_full_analysis(self):
         article = SAMPLE_ARTICLES[2]

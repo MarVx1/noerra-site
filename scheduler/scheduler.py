@@ -15,13 +15,15 @@ from parsers.youtube import YouTubeParser
 from parsers.base import RawArticle
 
 from scoring.scorer import score_article
-from classifier.classifier import classify
+from classifier.classifier import classify, get_topic_emoji
+from adaptation.utils import esc, _shorten
 from adaptation.pipeline import Pipeline
 from adaptation.adapter import generate_summary, generate_post
 from adaptation.cluster import build_cluster_post
 from adaptation.editorial_engine import EditorialEngine
-from adaptation.editorial_planner import EditorialPlanner
-from knowledge.core import build_research_passport, extract_scientific_claims, normalize_claim
+from intelligence.research_analysis.passport_builder import build_research_passport
+from intelligence.research_analysis.claim_extractor import extract_scientific_claims
+from intelligence.research_analysis.text_extractors import normalize_claim
 from database.db import (
     article_exists, save_article, save_summary,
     save_research_passport, upsert_scientific_claim, save_claim_evidence,
@@ -66,6 +68,12 @@ def _run_pipeline_sync():
     logger.info("=" * 50)
     logger.info("Pipeline started")
 
+    # Предупреждение о известных проблемных источниках
+    logger.warning(
+        "Known unstable sources: cyberleninka (API may be down), youtube (RSS timeouts possible). "
+        "If these return 0 articles, check parser logs."
+    )
+
     # Парсеры запускаются параллельно через ThreadPoolExecutor
     parsers = [
         PubMedParser(),
@@ -76,6 +84,7 @@ def _run_pipeline_sync():
     ]
 
     all_articles: list[RawArticle] = []
+    articles_by_source: dict[str, list] = {}
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     with ThreadPoolExecutor(max_workers=5, thread_name_prefix="parser") as executor:
@@ -84,10 +93,22 @@ def _run_pipeline_sync():
             source_name = future_to_parser[future]
             try:
                 result = future.result()
-                all_articles += result
+                articles_by_source[source_name] = result
                 logger.info(f"Parser {source_name} completed: {len(result)} articles")
             except Exception as e:
                 logger.error(f"Parser {source_name} failed: {e}")
+                articles_by_source[source_name] = []
+
+    # Round-robin merge: берём по одной статье от каждого источника по очереди.
+    # Иначе источник, который просто ответил быстрее (или дал больше статей),
+    # монополизирует весь лимит MAX_ARTICLES_PER_RUN, а остальные источники
+    # никогда не доходят до оценки — независимо от их реального качества.
+    import itertools
+    per_source_lists = list(articles_by_source.values())
+    all_articles = [
+        a for a in itertools.chain.from_iterable(itertools.zip_longest(*per_source_lists))
+        if a is not None
+    ]
 
     logger.info("Collected articles: %s", len(all_articles))
 
@@ -96,16 +117,21 @@ def _run_pipeline_sync():
     sent = skipped_dup = skipped_topic = skipped_score = quality_failed = failed = 0
     drafts_to_send: list[int] = []
 
-    # Предзагрузка существующих URL для быстрой проверки дубликатов
-    existing_urls = _get_existing_urls_batch(all_articles[:MAX_ARTICLES_PER_RUN])
+    # Дедупликация по ВСЕМУ собранному списку, а не только по первым N —
+    # иначе лимит съедается дублями, а реально новые статьи (которые
+    # могут лежать дальше в списке) вообще не доходят до обработки.
+    existing_urls = _get_existing_urls_batch(all_articles)
+    new_candidates = [a for a in all_articles if a.url not in existing_urls]
+    skipped_dup += len(all_articles) - len(new_candidates)
 
-    for article in all_articles[:MAX_ARTICLES_PER_RUN]:
+    to_process = new_candidates[:MAX_ARTICLES_PER_RUN]
+    logger.info(f"К обработке: {len(to_process)} новых статей (из {len(new_candidates)} уникальных)")
+
+    for i, article in enumerate(to_process, start=1):
+        if i == 1 or i % 5 == 0 or i == len(to_process):
+            logger.info(f"Обработка статьи {i} из {len(to_process)}: {article.title[:60]!r}")
         try:
             if not article.url or not article.title:
-                continue
-
-            if article.url in existing_urls:
-                skipped_dup += 1
                 continue
 
             score = score_article(article)
@@ -141,9 +167,11 @@ def _run_pipeline_sync():
                 existing_urls.add(article.url)
                 continue
 
-            summary_ru = generate_summary(article, topic)
-            post_text = generate_post(article, topic, "TELEGRAPH_URL")
-
+            # Единственный источник текста: Pipeline.run_for_article() вызывает
+            # analyze()/generate_text() РОВНО ОДИН раз. Раньше здесь ДО этого
+            # отдельно вызывались generate_summary()/generate_post(), которые
+            # заново запускали analyze() со своим случайным выбором заголовка —
+            # в итоге редактор одобрял один текст, а публиковался другой.
             article_id = save_article(
                 source=article.source,
                 title=article.title,
@@ -157,10 +185,8 @@ def _run_pipeline_sync():
                 skipped_dup += 1
                 continue
 
-            save_summary(article_id, summary_ru, post_text)
-
-            passport = build_research_passport(article, topic, article_id)
-            save_research_passport(passport)
+            passport_research = build_research_passport(article, topic, article_id)
+            save_research_passport(passport_research)
             for claim in extract_scientific_claims(article, topic):
                 claim_id = upsert_scientific_claim(
                     claim.claim_text,
@@ -171,7 +197,7 @@ def _run_pipeline_sync():
                     claim_id=claim_id,
                     article_id=article_id,
                     relation=claim.relation,
-                    evidence_strength=passport.evidence_strength,
+                    evidence_strength=passport_research.evidence_strength,
                     confidence=claim.confidence,
                     reasoning=claim.reasoning,
                 )
@@ -180,9 +206,39 @@ def _run_pipeline_sync():
             result = pipeline.run_for_article(article, topic, article_id)
             draft_id = result.get("draft_id")
             review = result.get("review") or {}
+            pub = result.get("publication")
+
+            # summary_ru/post_text строятся из ТОГО ЖЕ Publication, что видел
+            # редактор в драфте — не пересчитываются заново.
+            summary_ru = pub.full_version if pub else (article.abstract or "")
+
+            # ВАЖНО: pub.short_version по конструкции EditorialEngine всегда
+            # равен pub.title (blocks[0] в build_structure() — это и есть title),
+            # поэтому использовать его как "тело" поста бессмысленно — получится
+            # дублирование заголовка без единого слова реального содержания.
+            # Реальный, извлечённый из абстракта текст лежит в pub.body.
+            visible_text = (pub.body or pub.lead or "").strip() if pub else ""
+            if not visible_text and pub:
+                # На случай пустого body — берём full_version за вычетом заголовка
+                visible_text = pub.full_version.replace(pub.title, "", 1).strip()
+            visible_text = _shorten(visible_text, 700) if visible_text else ""
+
+            post_text = (
+                f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"
+                f"{esc(visible_text)}\n\n"
+                f"📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+                if pub and visible_text else
+                (
+                    f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"
+                    f"📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+                    if pub else generate_post(article, topic, "TELEGRAPH_URL")
+                )
+            )
+            save_summary(article_id, summary_ru, post_text)
 
             if not review.get("passed", False):
-                update_article_status(article_id, "quality_failed")
+                reject_reason = "; ".join(review.get("hard_problems") or review.get("problems", []))
+                update_article_status(article_id, "quality_failed", reject_reason=reject_reason)
                 if draft_id:
                     update_draft_status(draft_id, "quality_failed")
                 quality_failed += 1
@@ -300,10 +356,6 @@ async def send_daily_digest():
                 source="youtube",
             )
 
-        # Plan story and build content via EditorialPlanner + EditorialEngine
-        planner = EditorialPlanner()
-        plan = planner.plan_cluster(topic, raw)
-
         engine = EditorialEngine()
 
         # Telegram post (compact) — build via existing helper which uses engine
@@ -384,7 +436,7 @@ def create_scheduler() -> AsyncIOScheduler:
 async def run_knowledge_audit():
     """Run daily knowledge audit and log stale topics + drifts."""
     logger.info("🔍 Running daily knowledge audit...")
-    from knowledge.audit import audit_all_topics, detect_knowledge_debt, track_confidence_drift
+    from intelligence.knowledge_audit import audit_all_topics, detect_knowledge_debt, track_confidence_drift
 
     try:
         audits = audit_all_topics(stale_days=30)

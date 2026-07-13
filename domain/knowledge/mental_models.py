@@ -170,7 +170,7 @@ def list_mental_models() -> List[Dict[str, str]]:
 
 def model_to_text(model: MentalModel) -> str:
     lines = [
-        f"🧩 <b>Модель понимания: {model.topic_ru}</b>",
+        f"\U0001f9e9 <b>Модель понимания: {model.topic_ru}</b>",
         f"<b>{model.title}</b>\n",
         f"<b>Правильное понимание:</b>\n{model.correct_understanding}\n",
         f"<b>Распространённое заблуждение:</b>\n{model.common_misconception}\n",
@@ -189,7 +189,7 @@ def get_model_brief(topic: str) -> str:
     if not model:
         return ""
     return (
-        f"🧩 <b>Как это понимать:</b> {model.correct_understanding[:200]}..."
+        f"\U0001f9e9 <b>Как это понимать:</b> {model.correct_understanding[:200]}..."
         if len(model.correct_understanding) > 200
-        else f"🧩 <b>Как это понимать:</b> {model.correct_understanding}"
+        else f"\U0001f9e9 <b>Как это понимать:</b> {model.correct_understanding}"
     )

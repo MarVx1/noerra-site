@@ -142,9 +142,13 @@ TITLE_PATTERNS = {
 }
 
 WHY_PATTERNS = [
-    "Это важно, потому что меняет то, как мы понимаем {topic_acc_lower} в повседневной жизни.",
+    # Прежний вариант "Это важно, потому что меняет то, как мы понимаем X"
+    # убран: он ничего не сообщает сверх самого факта "это важно" и в
+    # вычитке реальных публикаций 2026-07-14 читался как пустой штамп.
     "Речь не просто о теории — это влияет на реальные решения, связанные с {topic_inst_lower}.",
     "Главное здесь — практический взгляд на {topic_acc_lower}, а не абстрактные рассуждения.",
+    "Это не праздный вопрос: ответ на него влияет на то, как мы вообще думаем о {topic_prep_lower}.",
+    "Дело не в самом факте, а в том, что он меняет в наших ожиданиях от {topic_gen_lower}.",
 ]
 
 CAVEAT_PATTERNS = [
@@ -417,7 +421,6 @@ def _build_context_summary(passport: dict) -> str:
     related = kc.get("related_works", [])
     consensus = kc.get("consensus", [])
     contradictions = kc.get("contradictions", [])
-    open_questions = kc.get("open_questions", [])
 
     if related:
         lines.append(_plural_related_works(len(related)))
@@ -425,8 +428,11 @@ def _build_context_summary(passport: dict) -> str:
         lines.append("Часть предыдущих исследований подтверждает общую картину.")
     if contradictions:
         lines.append("Есть и работы с другим взглядом, что важно учесть.")
-    if open_questions:
-        lines.append("Остаются открытые вопросы, требующие дальнейших проверок.")
+    # "Остаются открытые вопросы, требующие дальнейших проверок" сюда не
+    # включаем: почти любой академический абстракт заканчивается призывом
+    # к дальнейшим исследованиям, поэтому этот флаг истинен почти всегда и
+    # не несёт информации — только раздувает блок одинаковым текстом в
+    # каждой статье (вычитка реальных публикаций 2026-07-14).
 
     return " ".join(lines)
 
@@ -472,6 +478,15 @@ class EditorialEngine:
 
         # Декомпозиция абстракта — каждое предложение в одной роли
         decomposed = _decompose_abstract(abstract)
+
+        # detect_scenario() определяет "practical" по ключевым словам в
+        # исходном тексте (intervention/therapy/рекоменд...), но реальный
+        # практический вывод извлекается только здесь, из decomposed. Если
+        # ключевые слова были, а вывода по факту нет — заголовок и вопрос
+        # читателя не должны обещать применение, которого не будет в тексте
+        # (см. HONEST_NO_PRACTICAL_PATTERNS в _build_practical_block).
+        if scenario == "practical" and not (decomposed.get("practical") or "").strip():
+            scenario = "discovery"
 
         title = _build_title(topic, scenario)
         lead = _build_lead(topic, scenario, abstract, decomposed)

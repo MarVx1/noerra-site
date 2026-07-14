@@ -475,7 +475,11 @@ class TestPracticalValueHonesty(unittest.TestCase):
         )
         engine = EditorialEngine()
         passport = engine.analyze(article, "neuroscience")
-        self.assertEqual(passport["scenario"], "practical")
+        # detect_scenario() увидел триггер "method"/"метод" и предложил
+        # "practical", но раз реального практического вывода не нашлось,
+        # analyze() понижает сценарий — иначе заголовок и вопрос читателя
+        # обещали бы применение, которого текст сам не подтверждает.
+        self.assertNotEqual(passport["scenario"], "practical")
         self.assertFalse(passport["practical_value"])
         structure = engine.build_structure(passport)
         text = "\n\n".join(structure)
@@ -484,10 +488,12 @@ class TestPracticalValueHonesty(unittest.TestCase):
             "Результат помогает принять более осознанные решения, связанные с этой темой.",
             text,
         )
-        self.assertTrue(
-            any(p in text for p in HONEST_NO_PRACTICAL_PATTERNS),
-            "Ожидалась честная формулировка об отсутствии практической пользы.",
-        )
+        # Сценарий понижен до не-practical, поэтому текст просто не поднимает
+        # тему практического применения — ни выдуманного совета, ни честной
+        # оговорки о его отсутствии. Заголовок и вопрос читателя при этом
+        # тоже не должны обещать применение, которого не будет в статье.
+        self.assertNotIn("как применить", passport["title"].lower())
+        self.assertNotIn("применить", passport["reader_question"].lower())
 
 
 class TestReaderQuestion(unittest.TestCase):

@@ -72,7 +72,10 @@ def build_knowledge_context(topic: str, article=None, limit: int = 5) -> Knowled
         abstract = row["abstract"] or ""
 
         related.append({"title": title, "url": url, "source": source})
-        if re.search(r"not|contradict|oppose|вопреки|опроверг|не поддерж", abstract, re.I):
+        # "not" убран из списка: слово встречается почти в любом английском
+        # абстракте ("cannot", "not only" и т.п.) и раньше делало флаг
+        # contradictions истинным практически всегда, независимо от темы.
+        if re.search(r"contradict|oppose|inconsistent with|вопреки|опроверг|не поддерж", abstract, re.I):
             contradictions.append(title)
         if re.search(r"confirm|support|подтверд|replicate|consistent|agreement|reproduce", abstract, re.I):
             previous.append(title)

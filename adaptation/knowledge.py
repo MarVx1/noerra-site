@@ -77,7 +77,14 @@ def build_knowledge_context(topic: str, article=None, limit: int = 5) -> Knowled
         # contradictions истинным практически всегда, независимо от темы.
         if re.search(r"contradict|oppose|inconsistent with|вопреки|опроверг|не поддерж", abstract, re.I):
             contradictions.append(title)
-        if re.search(r"confirm|support|подтверд|replicate|consistent|agreement|reproduce", abstract, re.I):
+        # "support"/"agreement"/голое "consistent" убраны: это одни из самых
+        # частых слов в любом научном абстракте ("results support the
+        # hypothesis", "internally consistent") независимо от того,
+        # подтверждает ли работа именно ЭТУ статью. На реальных данных они
+        # давали match на 60-75% случайных абстрактов — эта строка
+        # оказывалась в любой статье. "consistent with" — уже конкретная
+        # формулировка про согласие с чужими результатами, её оставляем.
+        if re.search(r"confirm|подтверд|replicate|reproduce|consistent with|согласуется с|повторил", abstract, re.I):
             previous.append(title)
         if re.search(r"further|unknown|require|требует|неизвестно|дальше|будущее|future", abstract, re.I):
             open_q.append(title)

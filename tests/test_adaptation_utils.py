@@ -109,6 +109,44 @@ class TestAdaptationUtils(unittest.TestCase):
 
 
 
+class TestSectionLabels(unittest.TestCase):
+    """Метки разделов структурированного абстракта приходят из источника
+    приклеенными к следующему слову ("IntroductionAlthough...") — HTML-теги
+    схлопываются ещё на стороне фида. В статье это давало "ВведениеХотя".
+    """
+
+    def test_strips_glued_label(self):
+        from adaptation.utils import _strip_section_labels
+        result = _strip_section_labels("IntroductionAlthough positive effects are reported.")
+        self.assertEqual(result, "Although positive effects are reported.")
+
+    def test_strips_glued_results_label(self):
+        from adaptation.utils import _strip_section_labels
+        result = _strip_section_labels("ResultsCorrelation analysis revealed links.")
+        self.assertEqual(result, "Correlation analysis revealed links.")
+
+    def test_strips_label_with_colon_or_space(self):
+        from adaptation.utils import _strip_section_labels
+        self.assertEqual(
+            _strip_section_labels("Methods: We used a randomized design."),
+            "We used a randomized design.",
+        )
+        self.assertEqual(
+            _strip_section_labels("Background Adult ADHD is common."),
+            "Adult ADHD is common.",
+        )
+
+    def test_leaves_ordinary_prose_untouched(self):
+        """Lookahead на заглавную защищает обычную прозу от вырезания."""
+        from adaptation.utils import _strip_section_labels
+        for text in (
+            "Results show that sleep improves memory.",
+            "The method was validated in a cohort.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(_strip_section_labels(text), text)
+
+
 class TestRussianOnlyHelpers(unittest.TestCase):
     """Требование: в статье не должно быть английского текста."""
 

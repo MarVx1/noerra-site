@@ -27,6 +27,7 @@ from adaptation.utils import (
     _detect_numbers,
     _fix_translation,
     _strip_latin_abbreviations,
+    _strip_section_labels,
 )
 
 # Названия источников — имена собственные, поэтому остаются латиницей, но
@@ -389,6 +390,23 @@ def _plural_related_works(n: int) -> str:
 
 
 def _build_context_summary(passport: dict) -> str:
+    """Смысловой контекст знаний — работает на пункт ТЗ "Почему исследованию
+    можно доверять".
+
+    Перечисление заголовков близких работ ("Среди ближайших работ: ...")
+    убрано намеренно:
+    - такого блока нет в структуре статьи по ТЗ;
+    - он читается как раздел "Литература", а ТЗ прямо запрещает писать как
+      научная статья;
+    - сырой заголовок вроде "Картирование эмоциональной функции при
+      фибромиалгии: интеграция алекситимии и катастрофизации боли" нарушает
+      правило "читатель никогда не должен чувствовать себя глупым";
+    - он регулярно позорил: в статье про стрессоустойчивость человека
+      всплывала работа "Стресс при отъеме ... у свиней". Ранжированием по
+      схожести это не лечится — такие работы делят словарь с исходной
+      (кортизол, ГГН-ось) и набирают высокий балл честно.
+    Доверие к исследованию обслуживает блок "Уровень доказательности".
+    """
     kc = passport.get("knowledge_context") or {}
     if not kc:
         return ""
@@ -407,18 +425,6 @@ def _build_context_summary(passport: dict) -> str:
         lines.append("Есть и работы с другим взглядом, что важно учесть.")
     if open_questions:
         lines.append("Остаются открытые вопросы, требующие дальнейших проверок.")
-
-    if related:
-        # Заголовки близких работ лежат в БД в оригинале (обычно английском)
-        # и раньше вставлялись как есть — в 78% статей это давало кусок
-        # английского текста посреди русской статьи.
-        top_titles = [
-            _strip_latin_abbreviations(_translate(item["title"]))
-            for item in related[:2] if item.get("title")
-        ]
-        top_titles = [t for t in top_titles if t]
-        if top_titles:
-            lines.append(f"Среди ближайших работ: {', '.join(top_titles)}.")
 
     return " ".join(lines)
 
@@ -448,7 +454,9 @@ class EditorialEngine:
         """Analyze article and produce a publication passport."""
         topic_ru = get_topic_ru(topic)
         scenario = detect_scenario(article)
-        abstract = _translate(_clean_text(article.abstract or ""))
+        # Метки разделов ("IntroductionAlthough...") убираем ДО перевода,
+        # пока текст ещё английский.
+        abstract = _translate(_strip_section_labels(_clean_text(article.abstract or "")))
         abstract = _shorten(abstract, max_len=1200)
         # Simplification (Stage 6): убираем канцеляризмы на уровне
         # редакционного слоя, а не в _translate() — тот кэширует переводы

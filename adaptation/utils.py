@@ -23,6 +23,37 @@ def _split_sentences(text: str) -> list[str]:
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
 
 
+# Метки разделов структурированного абстракта. В источнике они часто
+# приклеены к следующему слову ("IntroductionAlthough positive effects...") —
+# HTML-теги вырезаются вместе с пробелом ещё на стороне фида. После перевода
+# это давало в статье "ВведениеХотя часто сообщается..." и отдельный абзац
+# "Методы.". Для научпоп-статьи такие метки — мусор, поэтому удаляем их
+# целиком, а не просто отделяем пробелом. Делать это надо ДО перевода, пока
+# текст ещё английский.
+_SECTION_LABELS = (
+    "Introduction", "Background", "Objectives", "Objective", "Purpose",
+    "Aims", "Aim", "Materials and Methods", "Methods", "Method",
+    "Results", "Result", "Findings", "Conclusions", "Conclusion",
+    "Discussion", "Significance", "Importance",
+)
+
+# Граница слова ставится только слева: справа её нет — метка приклеена
+# вплотную к следующему слову ("IntroductionAlthough"). Роль правой границы
+# играет lookahead на заглавную букву: он же защищает обычную прозу
+# ("Results show that...") от вырезания метки.
+_SECTION_LABEL_RE = re.compile(
+    r"\b(" + "|".join(_SECTION_LABELS) + r")\s*[:.\-–—]?\s*(?=[A-Z])"
+)
+
+
+def _strip_section_labels(text: str) -> str:
+    """Убирает метки разделов структурированного абстракта."""
+    if not text:
+        return text
+    text = _SECTION_LABEL_RE.sub("", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
 def _translate(text: str, lang: str = "ru") -> str:
     if not text or not text.strip():
         return text

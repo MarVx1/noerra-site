@@ -49,28 +49,15 @@ def classify(article: RawArticle) -> tuple[str, float]:
     title = (article.title or "").lower()
     abstract = (article.abstract or "").lower()
     topic_scores: dict[str, int] = {}
-    # Вес 3 = "специфичный термин (сильный сигнал)" по определению в шапке
-    # config/topics.py — без хотя бы одного такого слова тема держится
-    # целиком на общей лексике (reward/reinforcement/learning/attention),
-    # которая в arXiv-статьях про ML совпадает с нейронаучной один в один:
-    # ML-статья "Online Reinforcement Learning for Computer-Use Agents"
-    # набирала score по "reinforcement"+"reward" и уходила в тему "dopamine",
-    # хотя ни разу не упоминала ни дофамин, ни мозг (вычитка 2026-07-15).
-    topic_has_anchor: dict[str, bool] = {}
 
     for topic, patterns in _KEYWORD_PATTERNS.items():
         score = 0
-        has_anchor = False
         for pattern, weight in patterns:
-            matched = pattern.search(title) or pattern.search(abstract)
             if pattern.search(title):
                 score += weight * TITLE_WEIGHT_MULTIPLIER
             elif pattern.search(abstract):
                 score += weight
-            if matched and weight >= 3:
-                has_anchor = True
         topic_scores[topic] = score
-        topic_has_anchor[topic] = has_anchor
 
     if not any(topic_scores.values()):
         return "unknown", 0.0
@@ -85,13 +72,6 @@ def classify(article: RawArticle) -> tuple[str, float]:
         logger.debug(
             f"Topic rejected: best '{best_topic}' scored {best_score} < {MIN_TOPIC_SCORE} "
             f"for '{article.title[:60]}'"
-        )
-        return "unknown", 0.0
-
-    if not topic_has_anchor[best_topic]:
-        logger.debug(
-            f"Topic rejected: best '{best_topic}' had no specific anchor keyword "
-            f"(score={best_score} came entirely from generic terms) for '{article.title[:60]}'"
         )
         return "unknown", 0.0
 

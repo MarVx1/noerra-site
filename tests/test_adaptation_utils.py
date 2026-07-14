@@ -83,29 +83,37 @@ class TestAdaptationUtils(unittest.TestCase):
         )
 
     def test_fix_translation_does_not_truncate_instrumental_case(self):
-        """Регрессия: text.replace('вознаграждение', 'награду') раньше
-        матчился как префикс более длинной словоформы 'вознаграждением',
-        обрезая её до 'наградум' (см. manual QA генерации статьи).
-        _fix_translation теперь матчит только целые слова (\\b)."""
-        text = "во время выполнения задания с вознаграждением."
-        result = _fix_translation(text)
-        self.assertIn("с наградой", result)
+        """Регрессия: text.replace('вознаграждение', 'награду') обрезал
+        более длинную словоформу до 'наградум'. Сейчас одиночное слово
+        вообще не заменяется (см. тест ниже), поэтому проверяем главное —
+        текст не искажается."""
+        result = _fix_translation("во время выполнения задания с вознаграждением.")
         self.assertNotIn("наградум", result)
+        self.assertIn("с вознаграждением", result)
 
-    def test_fix_translation_covers_other_reward_case_forms(self):
-        cases = {
-            "думает о вознаграждении.": "о награде",
-            "стремится к вознаграждению.": "к награде",
-            "интересуется вознаграждениями.": "наградами",
-            "разбирается в вознаграждениях.": "в наградах",
-        }
-        for text, expected_fragment in cases.items():
+    def test_fix_translation_does_not_break_gender_agreement(self):
+        """Регрессия: замена одиночного 'вознаграждение' (ср.р.) на
+        'награда' (ж.р.) ломала согласование с прилагательным —
+        'пищевое вознаграждение' превращалось в 'пищевое награду'.
+        Одиночное слово теперь не заменяется: оно и так нормальное русское.
+        """
+        cases = (
+            "Пищевое вознаграждение является полезной основой.",
+            "Денежное вознаграждение увеличивает мотивацию.",
+            "Пищевого вознаграждения ждали все.",
+        )
+        for text in cases:
             with self.subTest(text=text):
-                self.assertIn(expected_fragment, _fix_translation(text))
+                self.assertEqual(_fix_translation(text), text)
 
-    def test_fix_translation_still_replaces_bare_forms(self):
-        self.assertIn("награды", _fix_translation("системы вознаграждения работают иначе."))
-        self.assertIn("награду", _fix_translation("получить вознаграждение сразу."))
+    def test_fix_translation_still_replaces_whole_noun_phrases(self):
+        """Замены целой именной группы безопасны: заменяется и вершина,
+        и зависимое слово, поэтому род не рассыпается."""
+        self.assertIn("системы награды", _fix_translation("системы вознаграждения работают иначе."))
+        self.assertIn(
+            "ошибка предсказания награды",
+            _fix_translation("ошибка прогнозирования вознаграждения растёт."),
+        )
 
 
 

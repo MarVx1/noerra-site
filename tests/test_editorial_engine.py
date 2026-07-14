@@ -1,3 +1,4 @@
+import re
 import unittest
 from parsers.base import RawArticle
 from adaptation.editorial_engine import (
@@ -705,6 +706,44 @@ class TestTransitions(unittest.TestCase):
         self.assertTrue(any(b in TRANSITION_INTO_SIGNIFICANCE for b in structure))
         # Инвариант scheduler.py: blocks[0] — заголовок, не должен сдвинуться.
         self.assertEqual(structure[0], passport["title"])
+
+
+
+class TestGenderAgreementInTemplates(unittest.TestCase):
+    """Темы бывают разного рода (дофамин — м.р., психология — ж.р.), поэтому
+    шаблон не должен содержать краткое причастие/прилагательное м.р.,
+    согласуемое с темой: получалось "как устроен психология".
+    """
+
+    RISKY = re.compile(
+        r"\b(устроен|связан|важен|нужен|полезен|известен|изучен|сложен)\b(?![аоыи])"
+    )
+
+    def _all_banks(self):
+        banks = {}
+        for name, bank in (("LEAD", LEAD_PATTERNS), ("TITLE", TITLE_PATTERNS),
+                           ("QUESTION", QUESTION_PATTERNS)):
+            for scenario, templates in bank.items():
+                banks[f"{name}[{scenario}]"] = templates
+        for name, templates in (("WHY", WHY_PATTERNS), ("CAVEAT", CAVEAT_PATTERNS),
+                                ("FOOTERS", PRACTICAL_FOOTERS)):
+            banks[name] = templates
+        return banks
+
+    def test_no_gendered_participles_after_substitution(self):
+        for bank_name, templates in self._all_banks().items():
+            for template in templates:
+                for topic, cases in _TOPIC_CASES.items():
+                    kwargs = {f"topic_{k}": v for k, v in cases.items()}
+                    try:
+                        rendered = template.format(**kwargs)
+                    except KeyError:
+                        continue
+                    with self.subTest(bank=bank_name, topic=topic):
+                        self.assertIsNone(
+                            self.RISKY.search(rendered),
+                            f"Несогласование по роду: {rendered!r}",
+                        )
 
 
 if __name__ == '__main__':

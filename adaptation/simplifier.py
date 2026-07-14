@@ -11,6 +11,8 @@
 
 import re
 
+from adaptation.utils import _capitalize_sentences
+
 # (паттерн, замена) — порядок важен, более специфичные идут раньше.
 SIMPLIFICATION_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bв данной работе\b,?\s*", re.I), ""),
@@ -35,6 +37,9 @@ def simplify_text(text: str) -> str:
         return text
     for pattern, replacement in SIMPLIFICATION_RULES:
         text = pattern.sub(replacement, text)
+    # Удаление оборота может срезать НАЧАЛО предложения: "Таким образом,
+    # пищевое вознаграждение..." → "пищевое вознаграждение..." со строчной.
+    text = _capitalize_sentences(text)
     # Уборка артефактов после удаления оборотов: двойные пробелы, пробел
     # перед знаком препинания, предложение, начинающееся со строчной буквы
     # после точки — не решаем, оставляем на усмотрение редактора/critic.

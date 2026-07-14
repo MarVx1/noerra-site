@@ -75,6 +75,18 @@ class TestAdaptationUtils(unittest.TestCase):
             with self.subTest(sentence=sentence):
                 self.assertFalse(_has_practical_marker(sentence))
 
+    def test_practical_marker_rejects_meta_commentary_about_research(self):
+        """Регрессия: 'подчёркивает необходимость' ловило meta-комментарий
+        о самой науке ('нужна методологическая последовательность'), а не
+        практическую пользу для читателя (найдено вычиткой реальной
+        статьи про когницию, 2026-07-14)."""
+        sentence = (
+            "Этот дискурс подчеркивает необходимость концептуальной ясности, "
+            "методологической последовательности и критического различия "
+            "между нейронным взаимодействием и поведенческим выражением."
+        )
+        self.assertFalse(_has_practical_marker(sentence))
+
     def test_practical_marker_word_boundary_predstoit(self):
         """Регрессия: маркер 'стоит' ловился внутри 'предСТОИТ выяснить' —
         открытый вопрос принимался за рекомендацию."""

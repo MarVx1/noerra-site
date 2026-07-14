@@ -127,6 +127,34 @@ class TestAdaptationUtils(unittest.TestCase):
             _fix_translation("ошибка прогнозирования вознаграждения растёт."),
         )
 
+    def test_fix_translation_medicare_claims_not_complaints(self):
+        """Регрессия: 'Medicare claims' (записи о страховых случаях)
+        Google Translate перевёл дословно как 'претензии' (жалобы) —
+        нашлось в реальной сгенерированной статье про CPAP и апноэ сна,
+        2026-07-15."""
+        result = _fix_translation(
+            "участников, имеющих связанные претензии по программе Medicare, с одним или "
+            "несколькими утверждениями CPAP."
+        )
+        self.assertNotIn("претензии", result)
+        self.assertNotIn("утверждениями CPAP", result)
+        self.assertIn("данные о страховых случаях Medicare", result)
+        self.assertIn("случаями применения CPAP", result)
+
+    def test_fix_translation_mage_is_not_a_wizard(self):
+        """Регрессия: статистическое сокращение 'Mage' (mean age) Google
+        Translate транслитерировал как 'Маг' (волшебник). Фикс ограничен
+        позицией перед '=', чтобы не трогать настоящее слово 'маг'."""
+        result = _fix_translation("54 женщины, Маг = 22,46, SD = 4,50.")
+        self.assertNotIn("Маг", result)
+        self.assertIn("Средний возраст = 22,46", result)
+
+    def test_fix_translation_does_not_touch_genuine_word_mag(self):
+        """Слово 'маг' само по себе (не рядом с '=') — обычное русское
+        слово, трогать его нельзя."""
+        text = "Маг из старой сказки был персонажем этой истории."
+        self.assertEqual(_fix_translation(text), text)
+
 
 
 class TestSectionLabels(unittest.TestCase):

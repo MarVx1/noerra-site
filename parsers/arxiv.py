@@ -15,6 +15,28 @@ RSS_FEEDS = [
     "https://export.arxiv.org/rss/cs.AI",       # AI (для нейросетей мозга)
 ]
 
+# cs.AI — общая категория arXiv: в ней наравне с работами про нейросети
+# мозга (memristor-схемы, spiking neural networks и т.п.) идёт весь обычный
+# ML — агенты, LLM, RL-алгоритмы, которые к нейронауке никакого отношения
+# не имеют. Раньше такая статья ("Online Reinforcement Learning for
+# Multi-turn Computer-Use Agents") доходила до классификатора и получала
+# тему "dopamine" по словам reward/reinforcement, которые в ML и в
+# нейронауке о дофамине означают разное — по одним ключевым словам их не
+# различить (вычитка 2026-07-15). Фильтруем ИСТОЧНИК, а не классификатор:
+# только для cs.AI требуем явный нейро/био-якорь, иначе статья вообще не
+# попадает в кандидаты. q-bio.NC/q-bio.PE не трогаем — это уже
+# специализированные нейро-категории самого arXiv.
+_BRAIN_ANCHOR_RE = re.compile(
+    r"\b(brain|neuron|neuronal|synap|cortex|cortical|neuroscien|neurobiolog|"
+    r"biologically inspired|brain-inspired|neuromorphic|spiking neural|"
+    r"hippocamp|cerebell|cerebra|dopamin)",
+    re.IGNORECASE,
+)
+
+
+def _is_brain_relevant(text: str) -> bool:
+    return bool(_BRAIN_ANCHOR_RE.search(text))
+
 # RSS-фид arXiv кладёт в summary служебный префикс листинга перед самим
 # абстрактом ("arXiv:2607.11656v1 Announce Type: new  Abstract: ..."),
 # который раньше уходил в текст статьи как есть — читатель видел буквально
@@ -47,6 +69,9 @@ class ArxivParser(BaseParser):
                     arxiv_id = url.split("/abs/")[-1] if "/abs/" in url else ""
 
                     if not title or not url:
+                        continue
+
+                    if feed_url.endswith("/cs.AI") and not _is_brain_relevant(f"{title} {abstract}"):
                         continue
 
                     articles.append(RawArticle(

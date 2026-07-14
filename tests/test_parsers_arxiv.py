@@ -54,6 +54,21 @@ class TestArxivParser(unittest.TestCase):
         # Один упавший фид не должен обрушить остальные.
         self.assertEqual(len(articles), len(RSS_FEEDS) - 1)
 
+    def test_fetch_strips_arxiv_listing_prefix_from_abstract(self):
+        """Регрессия: RSS-фид кладёт служебный префикс листинга перед
+        абстрактом ("arXiv:2607.11656v1 Announce Type: new  Abstract: ...")
+        — он утекал в статью как есть и после перевода читался как
+        "ArXiv:...v1 Тип объявления: новое Аннотация:" (вычитка 2026-07-15)."""
+        entry = {
+            "title": "Some paper",
+            "link": "https://arxiv.org/abs/2607.11656",
+            "summary": "arXiv:2607.11656v1 Announce Type: new  Abstract: Accurate diagnostic classification is hampered.",
+        }
+        with patch("parsers.arxiv.feedparser.parse", return_value=_feed([entry])):
+            articles = ArxivParser().fetch()
+
+        self.assertEqual(articles[0].abstract, "Accurate diagnostic classification is hampered.")
+
     def test_external_id_empty_when_no_abs_marker(self):
         entry = {"title": "T", "link": "https://arxiv.org/pdf/9999.0000", "summary": ""}
         with patch("parsers.arxiv.feedparser.parse", return_value=_feed([entry])):

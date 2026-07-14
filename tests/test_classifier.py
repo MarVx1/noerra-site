@@ -62,6 +62,20 @@ class TestOffTopicRejection(unittest.TestCase):
     def test_article_with_no_keywords_at_all_is_unknown(self):
         self.assertEqual(classify(_article("Cooking pasta the Italian way"))[0], "unknown")
 
+    def test_reinforcement_learning_ml_paper_is_not_labelled_dopamine(self):
+        """Регрессия: реальная arXiv-статья "EvoCUA-1.5: Online Reinforcement
+        Learning for Multi-turn Computer-Use Agents" получала тему "dopamine"
+        — score набирался целиком из общих слов "reinforcement"/"reward",
+        которые в ML-статьях значат совсем другое, ни разу не упомянув сам
+        дофамин или мозг (вычитка реальных публикаций 2026-07-15)."""
+        art = _article(
+            "EvoCUA-1.5: Online Reinforcement Learning for Multi-turn Computer-Use Agents",
+            "Computer-use agents must solve long-horizon tasks through repeated interaction "
+            "with partially observable, multimodal desktop environments. Reward shaping and "
+            "reinforcement learning motivate the training procedure.",
+        )
+        self.assertEqual(classify(art)[0], "unknown")
+
     def test_incidental_keyword_mention_is_not_enough(self):
         """Одно случайное упоминание в теле не должно назначать тему."""
         art = _article(

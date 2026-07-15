@@ -92,7 +92,7 @@ async def on_cluster_confirm(callback: CallbackQuery):
     telegraph_content = build_telegraph_cluster(topic, raw, yt_article)
     topic_ru = get_topic_ru(topic)
 
-    telegraph_url = create_telegraph_page(
+    telegraph_url = await create_telegraph_page(
         title=f"Noerra: {topic_ru}",
         summary_ru=telegraph_content,
         source_url=articles_data[0]["url"] or "",

@@ -113,7 +113,14 @@ class YouTubeParser(BaseParser):
         rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
         for attempt in range(2):
             try:
-                resp = requests.get(rss_url, timeout=15)
+                # 15с × 2 попытки × 4 канала = до 120с блокировки одного
+                # потока — этот поток нельзя прервать отменой asyncio-задачи
+                # (requests.get синхронный), из-за чего при сбое polling'а
+                # main.py зависал на завершении вместо мгновенного выхода
+                # (см. историю чата, реальный запуск 2026-07-15 18:07).
+                # 8с — с запасом больше, чем требуется здоровому ответу
+                # YouTube RSS (обычно <1с), но втрое снижает худший случай.
+                resp = requests.get(rss_url, timeout=8)
                 if resp.status_code != 200:
                     logger.debug(f"YouTube RSS status {resp.status_code} for {channel_name}")
                     return []

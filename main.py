@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import os
 import sys
 
 from database.db import init_db
@@ -53,7 +54,7 @@ async def main():
             logger.error(f"Pipeline failed: {e}")
 
     # Запускаем пайплайн в фоне, бот стартует сразу
-    asyncio.create_task(pipeline_task())
+    pipeline_task_ref = asyncio.create_task(pipeline_task())
 
     # Бот слушает команды и кнопки (основной цикл)
     logger.info("Бот запущен, слушаю кнопки и команды...")
@@ -82,7 +83,29 @@ async def main():
             # это ожидаемо и не является дополнительной проблемой
             pass
         await get_bot().session.close()
+
+        # Даём фоновому pipeline_task шанс завершиться штатно, но не ждём
+        # его бесконечно. Он использует asyncio.to_thread() внутри
+        # (парсеры/переводы бьют по сети синхронным requests) — отмена
+        # asyncio-задачи не может прервать уже запущенный синхронный вызов
+        # в потоке, поток продолжит жить своей жизнью независимо от
+        # cancel(). Дожидаемся немного на случай, если задача как раз
+        # между сетевыми вызовами и завершится сама.
+        pipeline_task_ref.cancel()
+        try:
+            await asyncio.wait_for(pipeline_task_ref, timeout=5)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+
         logger.info("Noerra остановлена")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        # os._exit(), а не обычный возврат из main(): если поток парсера
+        # (например YouTube RSS, см. историю чата 2026-07-15) всё ещё
+        # жив, штатный выход Python ждал бы его на atexit-джойне потоков
+        # до 300с. os._exit() завершает процесс немедленно, без этого
+        # ожидания — здесь это осознанный компромисс, а не недосмотр.
+        os._exit(0)
 
 
 if __name__ == "__main__":

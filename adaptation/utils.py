@@ -114,6 +114,29 @@ def _strip_translated_section_labels(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+# Форма абстракта — диагностика на будущее (см. дополнение №2 к ТЗ
+# "редакционное качество", п.2.3), не переключение обработки прямо
+# сейчас. Оба известных на 2026-07-15 дефекта, у которых общий корень —
+# "абстракт не обычный нарративный" (утечка меток раздела, вынужденный
+# почти-дословный повтор находки в лиде и вопросе для короткого
+# абстракта) — уже устранены точечно способом, который не зависит от
+# формы (стрипинг меток применяется всегда; доля обрезки находки
+# считается всегда). classify_abstract_form() кладёт форму в
+# passport для видимости/будущих решений, а не меняет путь генерации.
+def classify_abstract_form(abstract: str) -> str:
+    """Классифицирует форму абстракта: "structured" (есть метка раздела
+    вроде "ЦЕЛЬ:"/"AIM:"), "short" (1-2 предложения — протокол/scoping
+    review с одной содержательной мыслью), "narrative" (обычный
+    многопредложенческий абстракт, на который рассчитан generate_text())."""
+    if not abstract or not abstract.strip():
+        return "short"
+    if _SECTION_LABEL_RE.search(abstract) or _RU_SECTION_LABEL_RE.search(abstract):
+        return "structured"
+    if len(_split_sentences(abstract)) <= 2:
+        return "short"
+    return "narrative"
+
+
 def _capitalize_sentences(text: str) -> str:
     """Восстанавливает заглавную букву в начале предложений.
 

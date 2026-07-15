@@ -30,6 +30,7 @@ from adaptation.utils import (
     _strip_latin_abbreviations,
     _strip_section_labels,
     _strip_translated_section_labels,
+    classify_abstract_form,
 )
 
 # Названия источников — имена собственные, поэтому остаются латиницей, но
@@ -531,9 +532,16 @@ class EditorialEngine:
         """Analyze article and produce a publication passport."""
         topic_ru = get_topic_ru(topic)
         scenario = detect_scenario(article)
+        raw_abstract = _clean_text(article.abstract or "")
+        # Диагностика формы абстракта (Дополнение №2 к ТЗ, п.2.3) — на
+        # СЫРОМ тексте, до стрипинга меток: иначе "structured" никогда
+        # не определится, метка к этому моменту уже будет вырезана.
+        # Сейчас это информационное поле в passport, не меняет путь
+        # генерации — см. docstring classify_abstract_form().
+        abstract_form = classify_abstract_form(raw_abstract)
         # Метки разделов ("IntroductionAlthough...") убираем ДО перевода,
         # пока текст ещё английский.
-        abstract = _translate(_strip_section_labels(_clean_text(article.abstract or "")))
+        abstract = _translate(_strip_section_labels(raw_abstract))
         # Второй проход — уже на переведённом тексте (см. docstring
         # _strip_translated_section_labels): ловит метки, дожившие до
         # перевода, и метки в изначально русских источниках, для которых
@@ -586,6 +594,7 @@ class EditorialEngine:
             "topic": topic,
             "topic_ru": topic_ru,
             "scenario": scenario,
+            "abstract_form": abstract_form,
             "title": title,
             "lead": lead,
             "abstract": abstract,

@@ -286,6 +286,39 @@ class TestStripTranslatedSectionLabels(unittest.TestCase):
         self.assertNotIn("ВЫВОДЫ", result)
 
 
+class TestClassifyAbstractForm(unittest.TestCase):
+    """Дополнение №2 к ТЗ, п.2.3 — диагностика формы абстракта."""
+
+    def test_detects_structured_by_english_label(self):
+        from adaptation.utils import classify_abstract_form
+        text = "AIM: This review aimed to map existing evidence about pharmacists in ADHD services."
+        self.assertEqual(classify_abstract_form(text), "structured")
+
+    def test_detects_structured_by_russian_label(self):
+        from adaptation.utils import classify_abstract_form
+        text = "ЦЕЛЬ: Этот обзор направлен на отображение существующих данных о фармацевтах."
+        self.assertEqual(classify_abstract_form(text), "structured")
+
+    def test_detects_short_by_low_sentence_count(self):
+        from adaptation.utils import classify_abstract_form
+        text = "Editorial comment on synaptic plasticity and learning in the adult brain."
+        self.assertEqual(classify_abstract_form(text), "short")
+
+    def test_detects_narrative_for_normal_multi_sentence_abstract(self):
+        from adaptation.utils import classify_abstract_form
+        text = (
+            "Sleep plays a critical role in memory consolidation. "
+            "We studied forty participants over two weeks of sleep restriction. "
+            "Results showed that memory performance declined significantly. "
+            "These findings suggest sleep is essential for learning."
+        )
+        self.assertEqual(classify_abstract_form(text), "narrative")
+
+    def test_empty_abstract_is_short(self):
+        from adaptation.utils import classify_abstract_form
+        self.assertEqual(classify_abstract_form(""), "short")
+
+
 class TestRussianOnlyHelpers(unittest.TestCase):
     """Требование: в статье не должно быть английского текста."""
 

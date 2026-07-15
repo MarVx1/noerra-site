@@ -129,13 +129,9 @@ class TestEditorialCritic(unittest.TestCase):
         self.assertTrue(any("exceed" in p and "words" in p for p in review["clarity"]))
 
     def test_latin_text_blocks_publication(self):
-        """Требование: статья только на русском. Латиница — hard-стоп.
-
-        Такое остаётся, когда имя гена — само подлежащее ("Как ADGRL3
-        влияет..."): переписать rule-based нельзя, поэтому лучше не
-        публиковать вовсе, чем выпустить полуанглийский текст.
-        """
-        text = self.good_text + "\n\nОднако то, как ADGRL3 влияет на дофамин, изучено плохо."
+        """Требование: статья только на русском. Настоящая утечка
+        непереведённого английского текста — hard-стоп."""
+        text = self.good_text + "\n\nHowever this remains poorly understood by researchers."
         review = self.critic.review(self.good_passport, text)
         self.assertFalse(review["passed"])
         self.assertTrue(any(p.startswith("Latin text") for p in review["hard_problems"]))
@@ -143,6 +139,16 @@ class TestEditorialCritic(unittest.TestCase):
     def test_source_brand_names_are_allowed(self):
         """Названия источников — имена собственные, они не блокируют."""
         text = self.good_text + "\n\nОсновано на материалах: PubMed, arXiv."
+        review = self.critic.review(self.good_passport, text)
+        self.assertEqual(review["language"], [])
+
+    def test_acronyms_are_allowed(self):
+        """Сплошные заглавные аббревиатуры (названия датасетов/генов) не
+        переводятся и не блокируют публикацию — решение 2026-07-15: по форме
+        слова нельзя отличить уместный акроним (ADNI, OASIS-3) от названия
+        гена (ADGRL3), поэтому оба теперь допускаются.
+        """
+        text = self.good_text + "\n\nМы обучили модель на ADNI и оценили на OASIS-3 и AIBL."
         review = self.critic.review(self.good_passport, text)
         self.assertEqual(review["language"], [])
 

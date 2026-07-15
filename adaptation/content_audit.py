@@ -89,19 +89,33 @@ def check_duplicate_long_sentence(text: str, min_words: int = 8) -> bool:
 _ALL_TRANSITIONS = TRANSITION_INTO_BODY + TRANSITION_INTO_ANALOGY + TRANSITION_INTO_SIGNIFICANCE
 
 
+_READ_MORE_RE = re.compile(r"Читать полностью|TELEGRAPH_URL|telegra\.ph", re.IGNORECASE)
+
+
 def check_dangling_transition(text: str) -> bool:
-    """Переход-обещание (TRANSITION_INTO_ANALOGY и т.п.) — последний
-    абзац текста, без содержательного блока сразу за ним. В текущем
-    build_structure() такое структурно невозможно (переход и его
-    содержание добавляются одним условным блоком), но это регрессионная
-    страховка, а не догадка — если условие в будущем случайно сломают,
-    этот audit должен это поймать."""
+    """Переход-обещание (TRANSITION_INTO_ANALOGY и т.п.) без
+    содержательного блока сразу за ним.
+
+    Проверяет не только "переход — последний абзац", но и "переход,
+    сразу за которым идёт только ссылка «Читать полностью»" — в реальном
+    опубликованном посте (scheduler.py собирает post_text отдельно от
+    generate_text()) после текста ВСЕГДА добавляется CTA-ссылка на
+    Telegraph, поэтому переход технически предпоследний абзац, а не
+    последний, и первая версия этой проверки такое пропускала (article
+    id=635, live-публикация 2026-07-15/16 — реальный опубликованный
+    пост оборвался ровно на "Разберёмся по порядку.", хотя сгенерированный
+    полный текст в drafts.full_version содержал контент дальше — обрыв
+    происходил на отдельном этапе обрезки в scheduler.py, не в генерации)."""
     if not text:
         return False
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not paragraphs:
         return False
-    return paragraphs[-1] in _ALL_TRANSITIONS
+    if paragraphs[-1] in _ALL_TRANSITIONS:
+        return True
+    if len(paragraphs) >= 2 and paragraphs[-2] in _ALL_TRANSITIONS and _READ_MORE_RE.search(paragraphs[-1]):
+        return True
+    return False
 
 
 def audit_text(text: str) -> list[str]:

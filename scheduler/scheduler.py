@@ -16,7 +16,7 @@ from parsers.base import RawArticle
 
 from scoring.scorer import score_article
 from classifier.classifier import classify, get_topic_emoji
-from adaptation.utils import esc, _shorten
+from adaptation.utils import esc, _shorten, _shorten_by_paragraphs
 from adaptation.pipeline import Pipeline
 from adaptation.adapter import generate_summary, generate_post
 from adaptation.cluster import build_cluster_post
@@ -230,7 +230,15 @@ def _run_pipeline_sync():
             if not visible_text and pub:
                 # На случай пустого body — берём full_version за вычетом заголовка
                 visible_text = pub.full_version.replace(pub.title, "", 1).strip()
-            visible_text = _shorten(visible_text, 700) if visible_text else ""
+            # _shorten_by_paragraphs, не _shorten: последняя режет по границе
+            # предложения и не знает, что переход-обещание
+            # (transitions.py — "Разберёмся по порядку." и т.п.) обязан идти
+            # с содержанием следом — попав на такую фразу, реальный
+            # опубликованный пост обрывался ровно на ней (article id=635,
+            # live-публикация 2026-07-15/16). Тот же баг уже чинили в
+            # превью карточки модерации (bot/publishing.py) — здесь
+            # отдельный код, который тот фикс не затронул.
+            visible_text = _shorten_by_paragraphs(visible_text, 700) if visible_text else ""
 
             post_text = (
                 f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"

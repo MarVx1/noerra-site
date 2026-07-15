@@ -73,6 +73,27 @@ class TestCheckDanglingTransition(unittest.TestCase):
     def test_clean_text_not_flagged(self):
         self.assertFalse(check_dangling_transition("Обычный текст без переходов вообще."))
 
+    def test_flags_transition_followed_only_by_read_more_link(self):
+        """Реальный опубликованный пост (article id=635, 2026-07-16):
+        переход — не последний абзац (после него всегда идёт ссылка
+        «Читать полностью»), поэтому исходная проверка ("последний
+        абзац") это пропускала, хотя пост реально обрывался на
+        переходе-обещании."""
+        text = (
+            "Лид с фактом.\n\n"
+            "Разберёмся по порядку.\n\n"
+            "📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+        )
+        self.assertTrue(check_dangling_transition(text))
+
+    def test_does_not_flag_read_more_link_after_real_content(self):
+        text = (
+            "Лид с фактом.\n\n"
+            "Вопрос читателя?\n\n"
+            "📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+        )
+        self.assertFalse(check_dangling_transition(text))
+
     def test_empty_text_not_flagged(self):
         self.assertFalse(check_dangling_transition(""))
 

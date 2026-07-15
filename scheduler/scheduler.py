@@ -438,7 +438,49 @@ def create_scheduler() -> AsyncIOScheduler:
         id="noerra_channel_stats",
     )
 
+    scheduler.add_job(
+        run_content_audit,
+        trigger="cron",
+        hour=3,
+        minute=30,
+        id="noerra_content_audit",
+    )
+
     return scheduler
+
+
+async def run_content_audit():
+    """Автоматическая часть ручной вычитки (см. project memory
+    project-noerra-editorial-engine) — ловит структурные дефекты в
+    последних сгенерированных постах: обрыв текста, утечку служебных
+    меток источника, непереведённую латиницу вне акронимов. Не заменяет
+    ручное чтение (смысловые дефекты сюда не входят), но не даёт
+    известным уже-чинившимся багам пройти незамеченными между вычитками.
+    """
+    from adaptation.content_audit import audit_text
+    from database.db import get_recent_summaries
+
+    rows = get_recent_summaries(limit=30)
+    flagged = [
+        (row["id"], row["title"], problems)
+        for row in rows
+        if (problems := audit_text(row["post_text"] or ""))
+    ]
+
+    if not flagged:
+        logger.info("✅ Content audit: проблем не найдено")
+        return
+
+    logger.warning(f"⚠️ Content audit: {len(flagged)} постов с проблемами")
+    lines = [f"⚠️ <b>Content audit</b>: {len(flagged)} постов с проблемами\n"]
+    for article_id, title, problems in flagged[:10]:
+        lines.append(f"• [{article_id}] {title[:60]}: {'; '.join(problems)}")
+
+    from bot.bot import get_bot
+    try:
+        await get_bot().send_message(ADMIN_CHAT_ID, "\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Не удалось отправить отчёт content audit: {e}")
 
 
 async def snapshot_channel_stats():

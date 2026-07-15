@@ -328,6 +328,20 @@ def save_summary(article_id: int, summary_ru: str, post_text: str):
         )
 
 
+def get_recent_summaries(limit: int = 30) -> list[sqlite3.Row]:
+    """Последние сгенерированные посты для автоматической вычитки
+    (adaptation/content_audit.py) — самые свежие summaries вне
+    зависимости от статуса статьи, чтобы ловить дефекты до публикации."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT s.article_id AS id, a.title, a.topic, s.post_text, s.created_at
+               FROM summaries s
+               JOIN articles a ON a.id = s.article_id
+               ORDER BY s.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+
 def save_research_passport(passport) -> int:
     with get_conn() as conn:
         cur = conn.execute(

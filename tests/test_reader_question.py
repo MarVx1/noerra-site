@@ -87,6 +87,29 @@ class TestBuildReaderQuestion(unittest.TestCase):
         self.assertTrue(question.strip().endswith("?"))
         self.assertNotIn("социальная изоляция", question)
 
+    def test_falls_back_to_generic_when_finding_is_short_and_barely_shortened(self):
+        """Реальный случай (article id=534, 2026-07-15): находка короткая,
+        обрезка по запятой/двоеточию не находит границы клаузы и почти
+        целиком проходит через word-count fallback — вопрос дословно
+        повторял бы всё предложение лида целиком."""
+        finding = "Интернет-приложения когнитивно-поведенческой терапии обещают облегчить проблемы с настроением и депрессию."
+        question = build_reader_question("psychology", "discovery", finding=finding)
+        self.assertNotIn("Интернет-приложения", question)
+
+    def test_keeps_finding_aware_template_when_meaningfully_shortened(self):
+        """Контрпример к предыдущему: если обрезка реально сработала (доля
+        оставшихся слов заметно меньше исходной находки) — finding-aware
+        вопрос не должен гаситься, иначе регрессия к generic-вопросам
+        почти для всех статей (article id 391/393/398/483/588 читались
+        нормально и раньше это исправление не задевало)."""
+        finding = (
+            "Синдром дефицита внимания/гиперактивности — распространенное заболевание нервной системы, "
+            "поражающее примерно 7-8% детей и подростков и характеризующееся стойкой невнимательностью, "
+            "гиперактивностью и импульсивностью."
+        )
+        question = build_reader_question("ADHD", "discovery", finding=finding)
+        self.assertIn("Синдром дефицита внимания", question)
+
     def test_falls_back_to_generic_for_scenario_without_finding_templates(self):
         """explanation не расширялся finding-шаблонами (не входил в
         разобранный дефект) — должен остаться прежним generic-вопросом,

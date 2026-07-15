@@ -140,21 +140,41 @@ def _extract_finding_subject(finding: str, max_words: int = _MAX_FINDING_WORDS) 
         return ""
     excerpt = " ".join(words[:max_words])
     # Без "..." или "…" на конце — эта строка уходит в content_audit.py,
-    # который считает литеральные "..." сигнатурой обрыва текста.
-    return excerpt.rstrip(",;: ")
+    # который считает литеральные "..." сигнатурой обрыва текста. Точку
+    # тоже убираем: FINDING_QUESTION_PATTERNS сами добавляют "?" в конце
+    # шаблона, и без этой чистки короткая находка (уместившаяся целиком,
+    # без обрезки) давала на конце "...депрессию.?" — двойную пунктуацию
+    # (найдено батч-прогоном по корпусу, article id=534, 2026-07-15).
+    return excerpt.rstrip(",;:. ")
 
 
 def build_reader_question(topic: str, scenario: str, finding: str = "") -> str:
     """Строит человеческий вопрос, вокруг которого строится статья.
 
     finding — passport["main_idea"] или decomposed["finding"]: конкретная
-    находка статьи. Если после очистки от неё остаётся содержательный
-    фрагмент, вопрос ссылается на него (FINDING_QUESTION_PATTERNS) —
-    иначе используется прежний generic-вопрос по теме.
+    находка статьи, та же самая, что _build_lead() дословно вставляет в
+    лид (editorial_engine.py). Если после очистки от неё остаётся
+    содержательный фрагмент, вопрос ссылается на него
+    (FINDING_QUESTION_PATTERNS) — иначе используется generic-вопрос.
+
+    finding_subject почти всегда технически "содержится" в lead — это
+    префикс/отрезок той же находки, поэтому проверка "подстрока ли"
+    ложно срабатывала бы почти всегда и гасила finding-aware вопрос даже
+    там, где обрезка по запятой/двоеточию дала короткий, заметно
+    отличающийся фрагмент (article id 391/393/398/483/588 — там это
+    читается нормально, вопрос ссылается лишь на часть находки).
+    Настоящая проблема — когда находка КОРОТКАЯ и обрезать было нечего:
+    тогда вопрос дословно повторяет всё предложение лида целиком (article
+    id 534/604, 2026-07-15). Отличаем по доле слов: если после очистки
+    осталось почти столько же слов, сколько было в исходной находке —
+    обрезки не произошло, вопрос стал бы полным повтором лида.
     """
     finding_subject = _extract_finding_subject(finding)
     finding_patterns = FINDING_QUESTION_PATTERNS.get(scenario)
-    if finding_subject and finding_patterns:
+    finding_words = len(finding.split()) if finding else 0
+    subject_words = len(finding_subject.split()) if finding_subject else 0
+    barely_shortened = finding_words > 0 and subject_words >= 0.75 * finding_words
+    if finding_subject and finding_patterns and not barely_shortened:
         return _pick(finding_patterns, topic=topic, finding=finding_subject)
     patterns = QUESTION_PATTERNS.get(scenario, QUESTION_PATTERNS["discovery"])
     return _pick(patterns, topic=topic)

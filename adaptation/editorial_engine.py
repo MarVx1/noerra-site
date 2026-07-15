@@ -29,6 +29,7 @@ from adaptation.utils import (
     _fix_translation,
     _strip_latin_abbreviations,
     _strip_section_labels,
+    _strip_translated_section_labels,
 )
 
 # Названия источников — имена собственные, поэтому остаются латиницей, но
@@ -533,6 +534,11 @@ class EditorialEngine:
         # Метки разделов ("IntroductionAlthough...") убираем ДО перевода,
         # пока текст ещё английский.
         abstract = _translate(_strip_section_labels(_clean_text(article.abstract or "")))
+        # Второй проход — уже на переведённом тексте (см. docstring
+        # _strip_translated_section_labels): ловит метки, дожившие до
+        # перевода, и метки в изначально русских источниках, для которых
+        # английского прохода выше не было вовсе.
+        abstract = _strip_translated_section_labels(abstract)
         abstract = _shorten(abstract, max_len=1200)
         # Simplification (Stage 6): убираем канцеляризмы на уровне
         # редакционного слоя, а не в _translate() — тот кэширует переводы

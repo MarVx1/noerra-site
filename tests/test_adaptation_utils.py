@@ -210,6 +210,81 @@ class TestSectionLabels(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(_strip_section_labels(text), text)
 
+    def test_strips_all_caps_label(self):
+        """Регрессия: PubMed часто пишет метки СПЛОШНЫМИ ЗАГЛАВНЫМИ
+        ("AIM:"), а список меток — в Title Case ("Aim") — без
+        регистронезависимости "AIM:" не матчился вообще и доходил до
+        поста как "ЦЕЛЬ: ..." (живая публикация, article id=634,
+        2026-07-15)."""
+        from adaptation.utils import _strip_section_labels
+        result = _strip_section_labels("AIM: This review aimed to map existing evidence.")
+        self.assertEqual(result, "This review aimed to map existing evidence.")
+
+    def test_all_caps_case_insensitivity_does_not_loosen_lookahead(self):
+        """Регистронезависимость метки не должна ослаблять lookahead
+        справа — "results" строчными посреди фразы всё ещё не метка."""
+        from adaptation.utils import _strip_section_labels
+        text = "The results indicate that sleep improves memory."
+        self.assertEqual(_strip_section_labels(text), text)
+
+
+class TestStripTranslatedSectionLabels(unittest.TestCase):
+    """Второй слой очистки — на уже переведённом (русском) тексте, см.
+    _strip_translated_section_labels в adaptation/utils.py."""
+
+    def test_strips_ru_label_after_translation(self):
+        from adaptation.utils import _strip_translated_section_labels
+        result = _strip_translated_section_labels(
+            "ЦЕЛЬ: Этот обзор был направлен на сопоставление существующих данных."
+        )
+        self.assertEqual(result, "Этот обзор был направлен на сопоставление существующих данных.")
+
+    def test_strips_perspektiva_label(self):
+        """Найдено отдельно от исходного бага с 'ЦЕЛЬ' — та же утечка
+        для раздела PERSPECTIVE в комментариях/перспективных статьях."""
+        from adaptation.utils import _strip_translated_section_labels
+        result = _strip_translated_section_labels(
+            "ПЕРСПЕКТИВА: Высокая доля хронической боли требует всесторонней оценки."
+        )
+        self.assertEqual(result, "Высокая доля хронической боли требует всесторонней оценки.")
+
+    def test_does_not_touch_acronym_followed_by_colon(self):
+        """'СДВГ:'/'ГЦК:' — обычные аббревиатуры перед двоеточием-клаузой
+        внутри предложения, не метки раздела (найдено на живых данных:
+        'детей и подростков с СДВГ: метаанализ...', 'связь с ГЦК: ГЦК
+        проявлялся выше...') — не должны резаться."""
+        from adaptation.utils import _strip_translated_section_labels
+        texts = (
+            "Изменённая связь у детей и подростков с СДВГ: метаанализ нейровизуализации.",
+            "Одиночество показало связь с ГЦК: ГЦК проявлялся выше при низком одиночестве.",
+        )
+        for text in texts:
+            with self.subTest(text=text):
+                self.assertEqual(_strip_translated_section_labels(text), text)
+
+    def test_leaves_ordinary_prose_untouched(self):
+        from adaptation.utils import _strip_translated_section_labels
+        text = "Новые методы лечения были опробованы на большой выборке пациентов."
+        self.assertEqual(_strip_translated_section_labels(text), text)
+
+    def test_does_not_touch_own_practical_opener_template(self):
+        """Регрессия (батч-прогон по всему корпусу, article id=552,
+        2026-07-15): "ВЫВОД" — обычное слово, найденное \\b одно не
+        спасало от ложного срабатывания на собственном шаблоне движка
+        "Практический вывод: {value}" (PRACTICAL_OPENERS) — там "вывод"
+        не первое слово фразы, а настоящая метка раздела абстракта
+        всегда идёт первым словом."""
+        from adaptation.utils import _strip_translated_section_labels
+        text = "Практический вывод: Этот систематический обзор проводился в соответствии с рекомендациями PRISMA."
+        self.assertEqual(_strip_translated_section_labels(text), text)
+
+    def test_strips_label_at_start_of_paragraph_not_only_string_start(self):
+        from adaptation.utils import _strip_translated_section_labels
+        text = "Первый абзац с фактом.\n\nВЫВОДЫ: Дальнейшие исследования необходимы."
+        result = _strip_translated_section_labels(text)
+        self.assertIn("Дальнейшие исследования необходимы.", result)
+        self.assertNotIn("ВЫВОДЫ", result)
+
 
 class TestRussianOnlyHelpers(unittest.TestCase):
     """Требование: в статье не должно быть английского текста."""

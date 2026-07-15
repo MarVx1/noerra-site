@@ -243,6 +243,35 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_summaries_article ON summaries(article_id);
         """)
 
+        # Audience metrics (Business Model MVP шаг 3 — "проверить реакцию
+        # аудитории"): то, что реально отдаёт Bot API без MTPToto-клиента —
+        # агрегированные реакции на пост (message_reaction_count, без деанона
+        # юзеров) и число подписчиков канала (get_chat_member_count,
+        # периодический снимок). Просмотры/репосты постфактум через Bot API
+        # недоступны — этих таблиц под них нет, честно не притворяемся.
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS post_reactions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id        TEXT NOT NULL,
+                message_id     INTEGER NOT NULL,
+                reaction_type  TEXT NOT NULL,
+                total_count    INTEGER DEFAULT 0,
+                updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(chat_id, message_id, reaction_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_post_reactions_message
+                ON post_reactions(chat_id, message_id);
+
+            CREATE TABLE IF NOT EXISTS channel_stats (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id            TEXT NOT NULL,
+                subscriber_count   INTEGER NOT NULL,
+                snapshot_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_channel_stats_chat_time
+                ON channel_stats(chat_id, snapshot_at);
+        """)
+
         # FTS triggers: keep index in sync when articles change
         conn.executescript("""
             CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
@@ -965,5 +994,51 @@ def cleanup_invalid_claims_and_questions() -> dict:
         
         result = conn.execute("DELETE FROM myths WHERE length(myth_text) > 250")
         stats["myths_deleted"] += result.rowcount
-    
+
     return stats
+
+
+# ── Audience metrics ────────────────────────────────────────────
+
+def save_post_reaction_counts(chat_id: str, message_id: int, counts: dict[str, int]) -> None:
+    """Upsert current total per reaction emoji for one channel post.
+
+    counts приходит из message_reaction_count-события целиком — это не
+    дельта, а актуальный снимок всех реакций поста на момент события,
+    поэтому просто перезаписываем, а не суммируем.
+    """
+    with get_conn() as conn:
+        for reaction_type, total_count in counts.items():
+            conn.execute(
+                """INSERT INTO post_reactions (chat_id, message_id, reaction_type, total_count, updated_at)
+                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(chat_id, message_id, reaction_type)
+                   DO UPDATE SET total_count = excluded.total_count, updated_at = excluded.updated_at""",
+                (str(chat_id), message_id, reaction_type, total_count),
+            )
+
+
+def get_post_reaction_counts(chat_id: str, message_id: int) -> dict[str, int]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT reaction_type, total_count FROM post_reactions WHERE chat_id = ? AND message_id = ?",
+            (str(chat_id), message_id),
+        ).fetchall()
+        return {r["reaction_type"]: r["total_count"] for r in rows}
+
+
+def save_channel_stats_snapshot(chat_id: str, subscriber_count: int) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO channel_stats (chat_id, subscriber_count) VALUES (?, ?)",
+            (str(chat_id), subscriber_count),
+        )
+        return cur.lastrowid
+
+
+def get_channel_stats_history(chat_id: str, limit: int = 90) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM channel_stats WHERE chat_id = ? ORDER BY snapshot_at DESC LIMIT ?",
+            (str(chat_id), limit),
+        ).fetchall()

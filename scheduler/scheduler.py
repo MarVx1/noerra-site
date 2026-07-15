@@ -33,7 +33,7 @@ from database.db import (
 from config.settings import (
     PARSE_INTERVAL_MINUTES, MIN_SCORE_TO_MODERATE,
     MAX_ARTICLES_PER_RUN, TOP_PER_TOPIC, MAX_TOPICS_IN_DIGEST,
-    DIGEST_HOUR, ADMIN_CHAT_ID,
+    DIGEST_HOUR, ADMIN_CHAT_ID, CHANNEL_ID,
 )
 
 # Lazy import to avoid circular dependency (bot -> scheduler -> bot)
@@ -430,7 +430,34 @@ def create_scheduler() -> AsyncIOScheduler:
         id="noerra_audit",
     )
 
+    scheduler.add_job(
+        snapshot_channel_stats,
+        trigger="cron",
+        hour=3,  # После аудита, до дайджеста
+        minute=0,
+        id="noerra_channel_stats",
+    )
+
     return scheduler
+
+
+async def snapshot_channel_stats():
+    """Ежедневный снимок числа подписчиков канала (Business Model MVP шаг 3).
+
+    get_chat_member_count — единственная метрика роста аудитории, которую
+    Bot API отдаёт постфактум без MTProto-клиента; просмотры/репосты сюда
+    не входят принципиально.
+    """
+    from bot.bot import get_bot
+    from database.db import save_channel_stats_snapshot
+
+    bot = get_bot()
+    try:
+        count = await bot.get_chat_member_count(CHANNEL_ID)
+        save_channel_stats_snapshot(CHANNEL_ID, count)
+        logger.info(f"📈 Снимок подписчиков: {count}")
+    except Exception as e:
+        logger.error(f"Не удалось снять статистику канала: {e}")
 
 
 async def run_knowledge_audit():

@@ -91,3 +91,4 @@ from bot import commands  # noqa: F401,E402
 from bot import callbacks  # noqa: F401,E402
 from bot import knowledge_commands  # noqa: F401,E402
 from bot import cluster_callbacks  # noqa: F401,E402
+from bot import reactions  # noqa: F401,E402

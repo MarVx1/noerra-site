@@ -16,7 +16,7 @@ from parsers.base import RawArticle
 
 from scoring.scorer import score_article
 from classifier.classifier import classify, get_topic_emoji
-from adaptation.utils import esc, _shorten, _shorten_by_paragraphs
+from adaptation.utils import esc, esc_preserve_own_tags, _shorten, _shorten_by_paragraphs
 from adaptation.pipeline import Pipeline
 from adaptation.adapter import generate_summary, generate_post
 from adaptation.cluster import build_cluster_post
@@ -242,7 +242,10 @@ def _run_pipeline_sync():
 
             post_text = (
                 f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"
-                f"{esc(visible_text)}\n\n"
+                # esc_preserve_own_tags, не esc(): visible_text — это
+                # pub.body, а не голый текст, там уже есть наши <i>/<b>
+                # (аналогия, уровень доказательности) — см. docstring.
+                f"{esc_preserve_own_tags(visible_text)}\n\n"
                 f"📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
                 if pub and visible_text else
                 (

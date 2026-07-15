@@ -20,6 +20,7 @@ from database.db import (
 from publisher.publisher import create_telegraph_page, send_to_channel
 from adaptation.utils import _shorten as safe_shorten
 from adaptation.utils import _shorten_by_paragraphs
+from adaptation.utils import esc_preserve_own_tags
 
 from bot.bot import get_bot, ADMIN_ID, html_escape
 from bot.keyboards import moderation_keyboard, draft_moderation_keyboard
@@ -149,15 +150,19 @@ async def send_draft_for_editor(draft_id: int):
         preview_parts.append(f"<b>Лид:</b> {html_escape(safe_shorten(lead_text, 400))}")
     if short_text:
         preview_parts.append(f"\n<b>Краткая версия:</b>\n{html_escape(safe_shorten(short_text, 800))}")
+    # esc_preserve_own_tags, не html_escape: body/full_version — не голый
+    # текст, там уже есть наши <i>/<b> (аналогия, уровень доказательности) —
+    # html_escape ломал бы их в буквальные "&lt;i&gt;" (см. docstring
+    # esc_preserve_own_tags, тот же баг нашёлся живьём в scheduler.py).
     if body_text:
-        preview_parts.append(f"\n<b>Основной текст (уйдёт в Telegram):</b>\n{html_escape(_shorten_by_paragraphs(body_text, 800))}")
+        preview_parts.append(f"\n<b>Основной текст (уйдёт в Telegram):</b>\n{esc_preserve_own_tags(_shorten_by_paragraphs(body_text, 800))}")
     if full_text and len(full_text) > len(short_text):
-        preview_parts.append(f"\n<b>Полная версия (уйдёт в Telegraph, фрагмент):</b>\n{html_escape(_shorten_by_paragraphs(full_text, 600))}")
+        preview_parts.append(f"\n<b>Полная версия (уйдёт в Telegraph, фрагмент):</b>\n{esc_preserve_own_tags(_shorten_by_paragraphs(full_text, 600))}")
 
     # Если всё ещё мало текста, берём ещё
-    combined_preview = "\n\n".join(preview_parts) if preview_parts else html_escape(_shorten_by_paragraphs(full_text, 1500))
+    combined_preview = "\n\n".join(preview_parts) if preview_parts else esc_preserve_own_tags(_shorten_by_paragraphs(full_text, 1500))
     if len(combined_preview) < 1000 and full_text:
-        combined_preview = html_escape(_shorten_by_paragraphs(full_text, 2000))
+        combined_preview = esc_preserve_own_tags(_shorten_by_paragraphs(full_text, 2000))
 
     # Обрезаем до разумного предела (Telegram limit ~4096) — тоже по границе абзаца
     if len(combined_preview) > 3800:

@@ -319,6 +319,46 @@ class TestClassifyAbstractForm(unittest.TestCase):
         self.assertEqual(classify_abstract_form(""), "short")
 
 
+class TestEscPreserveOwnTags(unittest.TestCase):
+    """Регрессия (батч-прогон по корпусу + реальный опубликованный пост,
+    article id=609, 2026-07-16): esc()/html_escape() на pub.body ломали
+    собственные теги форматирования (<i>аналогия</i>, <b>Уровень
+    доказательности</b>) в буквальные "&lt;i&gt;...", т.к. эти теги —
+    не пользовательский ввод, а часть уже собранного build_structure()
+    текста, дошедшая до esc() вместе с обычной прозой."""
+
+    def test_preserves_own_italic_and_bold_tags(self):
+        from adaptation.utils import esc_preserve_own_tags
+        text = "Текст.\n\n<i>Аналогия здесь.</i>\n\n<b>Уровень доказательности:</b> средний."
+        result = esc_preserve_own_tags(text)
+        self.assertIn("<i>Аналогия здесь.</i>", result)
+        self.assertIn("<b>Уровень доказательности:</b>", result)
+
+    def test_preserves_capitalized_italic_tag(self):
+        """_capitalize_sentences может поднять регистр первой буквы тега
+        ("<I>") — этот вариант тоже должен сохраниться, не только <i>."""
+        from adaptation.utils import esc_preserve_own_tags
+        text = "<I>Аналогия с заглавной буквы тега.</i>"
+        result = esc_preserve_own_tags(text)
+        self.assertIn("<I>Аналогия с заглавной буквы тега.</i>", result)
+
+    def test_escapes_stray_angle_brackets_from_statistics(self):
+        """'p < .001' и т.п. в абстракте — не наш тег, должен экранироваться,
+        иначе ломает HTML-парсер сообщения Telegram целиком."""
+        from adaptation.utils import esc_preserve_own_tags
+        result = esc_preserve_own_tags("Значение p < .001 было значимым.")
+        self.assertIn("p &lt; .001", result)
+        self.assertNotIn("p < .001", result)
+
+    def test_escapes_ampersand(self):
+        from adaptation.utils import esc_preserve_own_tags
+        self.assertIn("A &amp; B", esc_preserve_own_tags("A & B"))
+
+    def test_empty_text_returns_empty(self):
+        from adaptation.utils import esc_preserve_own_tags
+        self.assertEqual(esc_preserve_own_tags(""), "")
+
+
 class TestRussianOnlyHelpers(unittest.TestCase):
     """Требование: в статье не должно быть английского текста."""
 

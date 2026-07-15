@@ -39,6 +39,7 @@ from database.db import get_conn, save_draft
 from parsers.base import RawArticle
 from adaptation.editorial_engine import EditorialEngine
 from adaptation.content_audit import audit_text, check_title_or_lead_repeats_recent
+from adaptation.utils import esc_preserve_own_tags, _shorten_by_paragraphs
 
 _BATCH_MARKER = "__batch_audit__"
 
@@ -74,6 +75,21 @@ def main():
         problems.extend(check_title_or_lead_repeats_recent(
             row["topic"], passport.get("title", ""), passport.get("lead", "")
         ))
+
+        # Реальный опубликованный post_text строится НЕ из generate_text()
+        # напрямую, а через отдельную обрезку в scheduler.py (visible_text =
+        # _shorten_by_paragraphs(pub.body, 700) + ссылка на Telegraph) —
+        # audit_text(text) выше эту обрезку не видит вообще, а именно в ней
+        # нашёлся реальный live-баг (article id=635, 2026-07-16: сгенерированный
+        # текст был полным, а опубликованный пост обрывался на переходе).
+        # Пересобираем post_text той же формулой, чтобы батч ловил и это.
+        parts = [p for p in text.split("\n\n") if p.strip()]
+        body = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
+        visible_text = _shorten_by_paragraphs(body, 700) if body else ""
+        if visible_text:
+            post_text = f"{esc_preserve_own_tags(visible_text)}\n\n📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+            post_text_problems = audit_text(post_text)
+            problems.extend(f"[post_text] {p}" for p in post_text_problems)
 
         results.append({
             "article_id": row["id"],

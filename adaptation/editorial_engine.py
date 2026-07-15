@@ -16,6 +16,7 @@ from adaptation.reader_question import build_reader_question
 from adaptation.analogy_bank import build_analogy
 from adaptation.simplifier import simplify_text
 from adaptation.transitions import build_transition
+from adaptation.jargon_glossary import simplify_methodology_terms
 from adaptation.utils import (
     _clean_text,
     _split_sentences,
@@ -177,6 +178,22 @@ HONEST_NO_PRACTICAL_PATTERNS = [
     "Авторы не формулируют практических выводов — это в первую очередь вклад в фундаментальное понимание темы.",
 ]
 
+# Рамка значимости — не практический вывод (тот отвечает "что делать"),
+# а честный ответ на "зачем вообще такое исследование", когда прямого
+# приложения к людям нет (типичный случай — фундаментальные animal
+# studies). Раньше в этом случае _collect_body_blocks() просто ничего не
+# добавляла (decomposed["practical"] пуст → блок молча пропускался) —
+# статья заканчивалась без единого слова о том, зачем читателю вообще
+# это знать (разбор реальной публикации, article id=483, "Стресс:
+# неожиданный поворот" — животное исследование без явного human-value).
+# Отдельный банк от HONEST_NO_PRACTICAL_PATTERNS: та фраза говорит "советов
+# нет", эта — "вот зачем такое исследование в принципе нужно", разный смысл.
+SIGNIFICANCE_FRAME_PATTERNS = [
+    "Это лабораторное исследование — прямых выводов для людей пока нет, но оно закладывает основу для будущих работ о {topic_prep_lower}.",
+    "Прямого применения к повседневной жизни здесь нет — это шаг к более полному пониманию {topic_gen_lower}.",
+    "Такие фундаментальные результаты не дают готовых советов, но именно на них потом строятся более прикладные исследования {topic_gen_lower}.",
+]
+
 SCENARIO_MARKERS = {
     "debunk": [
         "debunk", "myth", "false", "not true", "contrary", "refute", "opposed", "misconception",
@@ -280,6 +297,9 @@ def _collect_body_blocks(topic: str, decomposed: dict) -> list[str]:
     practical = decomposed.get("practical", "")
     if practical:
         blocks.append(_format_practical(topic, practical))
+    else:
+        # Рамка значимости вместо тишины — см. SIGNIFICANCE_FRAME_PATTERNS.
+        blocks.append(_pick(SIGNIFICANCE_FRAME_PATTERNS, topic=topic))
     return blocks
 
 
@@ -480,6 +500,10 @@ class EditorialEngine:
         # Только на исходном тексте: наши собственные шаблоны трогать нельзя,
         # иначе из блока доказательности вырежется "(RCT)".
         abstract = _strip_latin_abbreviations(abstract)
+        # Расшифровка методологического жаргона (тесты на грызунах и т.п.) —
+        # до декомпозиции, чтобы расшифровка попала в любой блок, куда уйдёт
+        # предложение (lead/body), а не только в один конкретный.
+        abstract = simplify_methodology_terms(abstract)
 
         # Декомпозиция абстракта — каждое предложение в одной роли
         decomposed = _decompose_abstract(abstract)
@@ -594,7 +618,7 @@ class EditorialEngine:
         passport["recommended_lead"] = lead
         # Reader Question (Stage 3): настоящий человеческий вопрос, а не
         # утверждение — статья строится вокруг него, а не вокруг исследования.
-        passport["reader_question"] = build_reader_question(topic, scenario)
+        passport["reader_question"] = build_reader_question(topic, scenario, finding=main_idea)
         passport["key_question"] = passport["reader_question"]  # алиас для обратной совместимости
         # Analogy (Stage 7): обязательный блок — critic.check_analogy_present
         # блокирует публикацию, если он пуст.

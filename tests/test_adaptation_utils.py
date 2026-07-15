@@ -155,6 +155,22 @@ class TestAdaptationUtils(unittest.TestCase):
         text = "Маг из старой сказки был персонажем этой истории."
         self.assertEqual(_fix_translation(text), text)
 
+    def test_fix_translation_collapses_scoping_review_duplication(self):
+        """Регрессия: Google Translate переводит 'scoping review' по
+        словам отдельно ('scoping'→'обзорный', 'review'→'обзор') — оба
+        слова сами по себе значат 'обзор', получается тавтология (живой
+        драфт модерации, article id=511, 'A Scoping Review', 2026-07-15)."""
+        result = _fix_translation("Этот обзорный обзор был направлен на картирование данных.")
+        self.assertEqual(result, "Этот обзор был направлен на картирование данных.")
+
+    def test_fix_translation_collapses_scoping_review_across_cases(self):
+        result = _fix_translation("В обзорном обзоре рассмотрены случаи применения.")
+        self.assertEqual(result, "В обзоре рассмотрены случаи применения.")
+
+    def test_fix_translation_does_not_touch_single_review_mention(self):
+        text = "Обычный обзор литературы был проведён отдельно от анализа."
+        self.assertEqual(_fix_translation(text), text)
+
 
 
 class TestSectionLabels(unittest.TestCase):

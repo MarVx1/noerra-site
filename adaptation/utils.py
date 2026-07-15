@@ -3,8 +3,18 @@
 import logging
 import re
 from database.db import get_translation, save_translation
+from adaptation.transitions import (
+    TRANSITION_INTO_BODY, TRANSITION_INTO_ANALOGY, TRANSITION_INTO_SIGNIFICANCE,
+)
 
 logger = logging.getLogger(__name__)
+
+# Переходы-обещания (transitions.py) без содержания сами по себе — если
+# такой абзац оказался последним включённым в _shorten_by_paragraphs(),
+# его нужно убрать, а не оставлять висеть без следующего абзаца.
+_DANGLING_TRANSITION_PHRASES = set(
+    TRANSITION_INTO_BODY + TRANSITION_INTO_ANALOGY + TRANSITION_INTO_SIGNIFICANCE
+)
 
 
 def esc(text: str) -> str:
@@ -176,6 +186,45 @@ def _shorten(text: str, max_len: int = 600) -> str:
     return cut[:last_dot + 1] if last_dot > max_len // 2 else cut + '...'
 
 
+def _shorten_by_paragraphs(text: str, max_len: int = 800) -> str:
+    """Обрезка по границе абзаца (\\n\\n), а не предложения.
+
+    Editorial Engine всегда кладёт переход-обещание ("Вот как это можно
+    себе представить.") и то, что он обещает (аналогию/значимость)
+    отдельными абзацами structure — но соседними. _shorten() режет по
+    последней точке внутри лимита и не знает об этой связи: если точка
+    перехода-обещания оказывается последней перед границей, превью
+    обрывается ровно на обещании без содержания (найдено на живых
+    драфтах модерации 2026-07-15, id 152/154/157 — "Вот как это можно
+    себе представить." без аналогии дальше). Обрезка по абзацу такой
+    пары никогда не разбивает: абзац либо входит целиком, либо не
+    входит вовсе.
+    """
+    if len(text) <= max_len:
+        return text
+    paragraphs = text.split("\n\n")
+    kept: list[str] = []
+    total = 0
+    for para in paragraphs:
+        extra = len(para) + (2 if kept else 0)
+        if total + extra > max_len:
+            break
+        kept.append(para)
+        total += extra
+    if not kept:
+        # Первый же абзац длиннее лимита целиком — нет более крупной
+        # единицы для обрезки, откатываемся на обрезку по предложению.
+        return _shorten(text, max_len)
+    # Абзац входит целиком или не входит — но сам переход-обещание может
+    # оказаться ПОСЛЕДНИМ включённым абзацем, если абзац с его содержанием
+    # (аналогия/значимость) не влезает следующим — та же дыра, просто на
+    # уровне абзаца, а не предложения. Такой хвост без содержания за ним
+    # хуже, чем более короткое превью, обрывающееся на реальном факте.
+    if len(kept) < len(paragraphs) and kept[-1] in _DANGLING_TRANSITION_PHRASES:
+        kept.pop()
+    return "\n\n".join(kept)
+
+
 # ── Постобработка машинного перевода ───────────────────────────
 # Google Translate часто выдаёт корявые формулировки.
 # Этот словарь исправляет наиболее частые ошибки.
@@ -246,6 +295,16 @@ _TRANSLATION_FIX_RULES: list[tuple[re.Pattern, str]] = [
 # где стоит именно статистическое сокращение, а не слово "маг" по смыслу.
 _TRANSLATION_FIX_RULES.append(
     (re.compile(r"\bМаг\b(?=\s*=)"), "Средний возраст")
+)
+
+# "Scoping review" Google Translate переводит по словам отдельно —
+# "scoping" (обзорный/предварительный) и "review" (обзор) — оба слова
+# сами по себе означают "обзор", получается "обзорный обзор" (найдено
+# на живом драфте модерации, article id=511, "Neuroplasticity ...:
+# A Scoping Review", 2026-07-15). Схлопываем вне зависимости от падежа —
+# второе слово несёт настоящую словоформу, первое просто лишнее.
+_TRANSLATION_FIX_RULES.append(
+    (re.compile(r"\bобзорн\w*\s+(обзор\w*)\b", re.IGNORECASE), r"\1")
 )
 
 

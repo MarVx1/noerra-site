@@ -47,6 +47,15 @@ def _get_send_draft():
 
 logger = logging.getLogger(__name__)
 
+# Retention cleanup (см. run_retention_cleanup): хранить неопубликованное
+# 7 дней, чистить раз в неделю. День недели зафиксирован на день внедрения
+# (2026-07-15 — среда) по прямой просьбе пользователя "начиная с
+# сегодняшнего дня", а не вычисляется динамически при каждом старте —
+# иначе цикл сдвигался бы от рестарта к рестарту вместо фиксированного
+# еженедельного дня.
+RETENTION_DAYS = 7
+RETENTION_CLEANUP_DAY_OF_WEEK = "wed"
+
 
 def _get_existing_urls_batch(articles: list[RawArticle]) -> set[str]:
     """Загружает существующие URL из БД одним запросом вместо N запросов."""
@@ -446,7 +455,34 @@ def create_scheduler() -> AsyncIOScheduler:
         id="noerra_content_audit",
     )
 
+    scheduler.add_job(
+        run_retention_cleanup,
+        trigger="cron",
+        day_of_week=RETENTION_CLEANUP_DAY_OF_WEEK,
+        hour=4,
+        minute=0,
+        id="noerra_retention_cleanup",
+    )
+
     return scheduler
+
+
+async def run_retention_cleanup():
+    """Еженедельная чистка: удаляет неопубликованные статьи (включая
+    source='youtube'), драфты и всё, что на них ссылается, старше
+    RETENTION_DAYS дней. Опубликованное не трогает независимо от
+    возраста (защита по наличию строки в publications, не по status).
+
+    Запущено вручную один раз 2026-07-15 (см. историю чата) — этот job
+    продолжает тот же цикл дальше, начиная со следующей недели.
+    """
+    from database.db import cleanup_unpublished_older_than
+
+    try:
+        stats = cleanup_unpublished_older_than(RETENTION_DAYS)
+        logger.info(f"🧹 Retention cleanup (>{RETENTION_DAYS}d, unpublished): {stats}")
+    except Exception as e:
+        logger.error(f"Retention cleanup failed: {e}")
 
 
 async def run_content_audit():

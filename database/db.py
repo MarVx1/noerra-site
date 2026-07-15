@@ -1084,3 +1084,78 @@ def get_publication_titles_for_message(message_id: int) -> list[str]:
             (message_id,),
         ).fetchall()
         return [r["title"] for r in rows]
+
+
+# ── Retention cleanup ────────────────────────────────────────────
+
+def cleanup_unpublished_older_than(days: int = 7) -> dict[str, int]:
+    """Удаляет статьи (в т.ч. source='youtube'), драфты и всё, что на
+    них ссылается, если они старше `days` дней и не были опубликованы.
+
+    Опубликованное защищено по факту наличия строки в publications, а
+    не по articles.status — status теоретически может разъехаться, а
+    publications.article_id — прямое доказательство публикации.
+
+    PRAGMA foreign_keys в проекте нигде не включён (см. историю ручной
+    чистки 2026-07-15) — ON DELETE CASCADE в схеме не сработает сам,
+    поэтому дочерние строки удаляются явно, в порядке потомок→родитель.
+    """
+    cutoff = f"-{days} days"
+    stats = {
+        "articles": 0, "drafts": 0, "summaries": 0,
+        "research_passports": 0, "claim_evidence": 0, "editor_feedback": 0,
+    }
+    with get_conn() as conn:
+        old_article_ids = [r["id"] for r in conn.execute(
+            """SELECT id FROM articles
+               WHERE created_at < datetime('now', ?)
+                 AND id NOT IN (SELECT article_id FROM publications)""",
+            (cutoff,),
+        ).fetchall()]
+
+        if old_article_ids:
+            aidp = ",".join("?" * len(old_article_ids))
+            draft_ids = [r["id"] for r in conn.execute(
+                f"SELECT id FROM drafts WHERE article_id IN ({aidp})", old_article_ids
+            ).fetchall()]
+            if draft_ids:
+                didp = ",".join("?" * len(draft_ids))
+                stats["editor_feedback"] += conn.execute(
+                    f"DELETE FROM editor_feedback WHERE draft_id IN ({didp})", draft_ids
+                ).rowcount
+            stats["drafts"] += conn.execute(
+                f"DELETE FROM drafts WHERE article_id IN ({aidp})", old_article_ids
+            ).rowcount
+            stats["summaries"] += conn.execute(
+                f"DELETE FROM summaries WHERE article_id IN ({aidp})", old_article_ids
+            ).rowcount
+            stats["research_passports"] += conn.execute(
+                f"DELETE FROM research_passports WHERE article_id IN ({aidp})", old_article_ids
+            ).rowcount
+            stats["claim_evidence"] += conn.execute(
+                f"DELETE FROM claim_evidence WHERE article_id IN ({aidp})", old_article_ids
+            ).rowcount
+            stats["articles"] += conn.execute(
+                f"DELETE FROM articles WHERE id IN ({aidp})", old_article_ids
+            ).rowcount
+
+        # Драфты без привязки к статье (article_id 0/NULL) или чья статья
+        # не старше cutoff, но сам драфт — старше (штатно не бывает, т.к.
+        # драфт создаётся после статьи, но проверяем для полноты).
+        standalone_draft_ids = [r["id"] for r in conn.execute(
+            """SELECT id FROM drafts
+               WHERE created_at < datetime('now', ?)
+                 AND (article_id IS NULL OR article_id = 0
+                      OR article_id NOT IN (SELECT article_id FROM publications))""",
+            (cutoff,),
+        ).fetchall()]
+        if standalone_draft_ids:
+            didp = ",".join("?" * len(standalone_draft_ids))
+            stats["editor_feedback"] += conn.execute(
+                f"DELETE FROM editor_feedback WHERE draft_id IN ({didp})", standalone_draft_ids
+            ).rowcount
+            stats["drafts"] += conn.execute(
+                f"DELETE FROM drafts WHERE id IN ({didp})", standalone_draft_ids
+            ).rowcount
+
+    return stats

@@ -1042,3 +1042,31 @@ def get_channel_stats_history(chat_id: str, limit: int = 90) -> list[sqlite3.Row
             "SELECT * FROM channel_stats WHERE chat_id = ? ORDER BY snapshot_at DESC LIMIT ?",
             (str(chat_id), limit),
         ).fetchall()
+
+
+def get_top_reacted_posts(chat_id: str, limit: int = 5) -> list[sqlite3.Row]:
+    """Посты с наибольшей суммой реакций по всем эмодзи.
+
+    Не джойнит publications напрямую: у кластерных постов один message_id
+    соответствует нескольким строкам publications (по одной на статью
+    кластера) — джойн размножил бы строки до GROUP BY и испортил бы сумму.
+    Заголовки для отображения берёт отдельно get_publication_titles_for_message.
+    """
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT message_id, SUM(total_count) AS total
+               FROM post_reactions WHERE chat_id = ?
+               GROUP BY message_id ORDER BY total DESC LIMIT ?""",
+            (str(chat_id), limit),
+        ).fetchall()
+
+
+def get_publication_titles_for_message(message_id: int) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT a.title FROM publications p
+               JOIN articles a ON a.id = p.article_id
+               WHERE p.telegram_post_id = ?""",
+            (message_id,),
+        ).fetchall()
+        return [r["title"] for r in rows]

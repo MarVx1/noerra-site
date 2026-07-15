@@ -16,9 +16,11 @@ from bot.bot import dp, is_admin, html_escape
 from bot.publishing import get_digest_candidates_count, get_digest_candidates_info
 from bot.keyboards import draft_moderation_keyboard
 from classifier.classifier import get_topic_ru
+from config.settings import CHANNEL_ID
 from database.db import (
     get_stats, get_pending_drafts,
     count_translations_matching, invalidate_translations_matching,
+    get_channel_stats_history, get_top_reacted_posts, get_publication_titles_for_message,
 )
 
 
@@ -41,6 +43,7 @@ async def cmd_start(message: Message):
         f"📬 В дайджесте сейчас: <b>{digest_count}</b> статьи\n\n"
         "Команды:\n"
         "/stats   — статистика\n"
+        "/audience_stats — реакции и подписчики\n"
         "/digest  — запросить дайджест прямо сейчас\n"
         "/help    — справка",
         parse_mode="HTML",
@@ -100,6 +103,46 @@ async def cmd_stats(message: Message):
         f"Отклонено:      {s['rejected']}\n"
         f"Опубликовано:   {s['published']}"
         f"{reject_lines}",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(Command("audience_stats"))
+async def cmd_audience_stats(message: Message):
+    """Реакции на посты + рост подписчиков (Business Model MVP шаг 3).
+
+    Оба источника данных наполняются сами по себе — реакции через
+    bot/reactions.py (событие message_reaction_count), подписчики через
+    ежедневный job scheduler.snapshot_channel_stats. Просмотры/репосты
+    сюда не входят: Bot API их постфактум не отдаёт (см. project memory
+    project-noerra-business-model).
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    history = get_channel_stats_history(CHANNEL_ID, limit=8)
+    if history:
+        latest = history[0]["subscriber_count"]
+        oldest = history[-1]["subscriber_count"]
+        delta = latest - oldest
+        sign = "+" if delta >= 0 else ""
+        growth_line = f"👥 Подписчики: <b>{latest}</b> ({sign}{delta} за {len(history)} посл. снимков)"
+    else:
+        growth_line = "👥 Подписчики: снимков ещё нет (появятся после первого ночного прогона в 3:00)"
+
+    top_posts = get_top_reacted_posts(CHANNEL_ID, limit=5)
+    if top_posts:
+        lines = ["", "<b>Топ постов по реакциям:</b>"]
+        for row in top_posts:
+            titles = get_publication_titles_for_message(row["message_id"])
+            label = html_escape(titles[0]) if titles else f"message_id={row['message_id']}"
+            lines.append(f"  {row['total']} — {label}")
+        posts_block = "\n".join(lines)
+    else:
+        posts_block = "\n\nРеакций пока не зафиксировано."
+
+    await message.answer(
+        f"📈 <b>Аудитория</b>\n\n{growth_line}{posts_block}",
         parse_mode="HTML",
     )
 
@@ -171,7 +214,8 @@ async def cmd_help(message: Message):
         "/timeline [тема] — история развития знаний\n\n"
         "<b>Аудит:</b>\n"
         "/audit — аудит базы знаний\n"
-        "/memory — редакционная память\n\n"
+        "/memory — редакционная память\n"
+        "/audience_stats — реакции на посты и рост подписчиков\n\n"
         "<b>Обслуживание:</b>\n"
         "/invalidate_cache &lt;подстрока&gt; [confirm] — очистить кеш перевода по подстроке",
         parse_mode="HTML",

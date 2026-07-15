@@ -454,6 +454,44 @@ class TestInvalidateCacheCommand(unittest.IsolatedAsyncioTestCase):
         msg.answer.assert_not_awaited()
 
 
+class TestAudienceStatsCommand(unittest.IsolatedAsyncioTestCase):
+    async def test_shows_growth_and_top_posts(self):
+        msg = _message("/audience_stats")
+        history = [{"subscriber_count": 105}, {"subscriber_count": 100}]
+        top_posts = [{"message_id": 42, "total": 7}]
+        with patch.object(b, "ADMIN_ID", ADMIN), \
+             patch.object(cmd_mod, "get_channel_stats_history", return_value=history), \
+             patch.object(cmd_mod, "get_top_reacted_posts", return_value=top_posts), \
+             patch.object(cmd_mod, "get_publication_titles_for_message", return_value=["Дофамин: обзор"]):
+            await cmd_mod.cmd_audience_stats(msg)
+
+        reply = msg.answer.await_args.args[0]
+        self.assertIn("105", reply)
+        self.assertIn("+5", reply)
+        self.assertIn("7", reply)
+        self.assertIn("Дофамин: обзор", reply)
+
+    async def test_handles_no_data_yet(self):
+        msg = _message("/audience_stats")
+        with patch.object(b, "ADMIN_ID", ADMIN), \
+             patch.object(cmd_mod, "get_channel_stats_history", return_value=[]), \
+             patch.object(cmd_mod, "get_top_reacted_posts", return_value=[]):
+            await cmd_mod.cmd_audience_stats(msg)
+
+        reply = msg.answer.await_args.args[0]
+        self.assertIn("снимков ещё нет", reply)
+        self.assertIn("Реакций пока не зафиксировано", reply)
+
+    async def test_ignored_for_non_admin(self):
+        msg = _message("/audience_stats", user_id=STRANGER)
+        with patch.object(b, "ADMIN_ID", ADMIN), \
+             patch.object(cmd_mod, "get_channel_stats_history") as hist:
+            await cmd_mod.cmd_audience_stats(msg)
+
+        hist.assert_not_called()
+        msg.answer.assert_not_awaited()
+
+
 class TestLazyBotInitialization(unittest.TestCase):
     """Bot создаётся лениво: Bot(token=...) валидирует токен сразу и падает с
     TokenValidationError на пустом BOT_TOKEN. Если бы объект создавался на

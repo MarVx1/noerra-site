@@ -84,6 +84,18 @@ class TestMatchTopic(unittest.TestCase):
     def test_returns_none_for_unrelated_title(self):
         self.assertIsNone(self.parser._match_topic("Cooking pasta the Italian way"))
 
+    def test_does_not_match_rem_as_substring_of_remember(self):
+        """Регрессия: голое 'rem' ловилось внутри 'remember'/'remarkable' —
+        тот же класс бага, что уже чинили в classifier.py (54 ложных
+        срабатывания на 'remains'). Живой случай: '2026 Stanford
+        Commencement Ceremony' попал в тему 'сон' (2026-07-15)."""
+        self.assertIsNone(self.parser._match_topic(
+            "Commencement speech: remember this remarkable day"
+        ))
+
+    def test_still_matches_rem_sleep_phrase(self):
+        self.assertEqual(self.parser._match_topic("Understanding REM sleep cycles"), "sleep")
+
 
 class TestFetch(unittest.TestCase):
     def setUp(self):

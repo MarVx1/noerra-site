@@ -34,11 +34,18 @@ YOUTUBE_QUERIES = {
     "stress":           "stress cortisol brain science",
 }
 
-# Ключевые слова для поиска таймингов в субтитрах
+# Ключевые слова для поиска таймингов в субтитрах.
+# "rem" (а не "rem sleep") ловил бы remains/remember/remarkable как
+# подстроку — тот же класс бага, что уже чинили в classifier/classifier.py
+# и config/topics.py (54 ложных срабатывания на "remains" в статьях);
+# здесь была отдельная, независимая копия списка, которую тот фикс не
+# затронул — обнаружено на живых данных: ролик "Stanford Commencement
+# Ceremony" (выпускная речь, где "remember"/"remarkable" — обычные слова)
+# получил тайминг по теме "сон" (2026-07-15).
 TOPIC_TRANSCRIPT_KEYWORDS = {
     "neuroscience":    ["neuroscience", "brain", "neural", "cortex"],
     "ADHD":            ["adhd", "attention deficit", "hyperactivity", "focus"],
-    "sleep":           ["sleep", "circadian", "rem", "melatonin"],
+    "sleep":           ["sleep", "circadian", "rem sleep", "melatonin"],
     "neuroplasticity": ["neuroplasticity", "plasticity", "synapse", "learning"],
     "dopamine":        ["dopamine", "reward", "motivation", "nucleus accumbens"],
     "anxiety":         ["anxiety", "amygdala", "fear", "stress response"],
@@ -46,6 +53,14 @@ TOPIC_TRANSCRIPT_KEYWORDS = {
     "psychology":      ["psychology", "behavior", "mental", "therapy"],
     "stress":          ["stress", "cortisol", "burnout", "resilience"],
 }
+
+
+def _keyword_hit(text_lower: str, keywords: list[str]) -> bool:
+    """Проверяет вхождение ключевого слова по границе НАЧАЛА слова, а не
+    произвольной подстрокой — иначе "rem" ловится внутри "remember" (см.
+    комментарий у TOPIC_TRANSCRIPT_KEYWORDS). Конец слова оставлен
+    свободным, чтобы не терять морфологию ("sleep" → "sleeping")."""
+    return any(re.search(r"\b" + re.escape(kw), text_lower) for kw in keywords)
 
 
 class YouTubeParser(BaseParser):
@@ -136,7 +151,7 @@ class YouTubeParser(BaseParser):
         """Определяет тему видео по ключевым словам в заголовке."""
         title_lower = title.lower()
         for topic, keywords in TOPIC_TRANSCRIPT_KEYWORDS.items():
-            if any(kw in title_lower for kw in keywords):
+            if _keyword_hit(title_lower, keywords):
                 return topic
         return None
 
@@ -156,7 +171,7 @@ class YouTubeParser(BaseParser):
 
             # Объединяем соседние фрагменты для контекста
             for i, segment in enumerate(transcript):
-                if any(kw in segment["text"].lower() for kw in keywords):
+                if _keyword_hit(segment["text"].lower(), keywords):
                     start = max(0, i - 1)
                     end   = min(len(transcript), i + 4)
                     excerpt = " ".join(s["text"] for s in transcript[start:end])

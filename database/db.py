@@ -328,6 +328,24 @@ def save_summary(article_id: int, summary_ru: str, post_text: str):
         )
 
 
+def get_recent_titles_and_leads_by_topic(topic: str, limit: int = 10) -> tuple[set[str], list[str]]:
+    """Заголовки и лиды недавних драфтов по теме — для anti-repeat в
+    _build_title()/_build_lead() (см. editorial_engine.py): банк
+    TITLE_PATTERNS/LEAD_PATTERNS конечен, и при частой теме коллизии
+    неизбежны при чистом random.choice (найдено на живых данных
+    2026-07-15 — draft id 185/186, дословно одинаковый заголовок для
+    разных статей "Когниция" подряд, даже после расширения банка до 8
+    вариантов)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT title, lead FROM drafts WHERE topic = ? ORDER BY created_at DESC LIMIT ?",
+            (topic, limit),
+        ).fetchall()
+        titles = {r["title"] for r in rows if r["title"]}
+        leads = [r["lead"] for r in rows if r["lead"]]
+        return titles, leads
+
+
 def get_recent_summaries(limit: int = 30) -> list[sqlite3.Row]:
     """Последние сгенерированные посты для автоматической вычитки
     (adaptation/content_audit.py) — самые свежие summaries вне

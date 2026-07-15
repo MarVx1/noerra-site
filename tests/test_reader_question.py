@@ -53,6 +53,27 @@ class TestExtractFindingSubject(unittest.TestCase):
         subject = _extract_finding_subject(long_finding, max_words=5)
         self.assertEqual(len(subject.split()), 5)
 
+    def test_cuts_at_colon_before_a_list_not_mid_first_item(self):
+        """Реальный случай (article id=588, 'СДВГ: чего мы раньше не
+        знали'): запятая после двоеточия-перечисления разделяет не
+        клаузы, а однородные члены первого пункта списка — обрезка по
+        ней рвала мысль посреди первого элемента ('...вопросов: факторы')."""
+        finding = (
+            "В этом обзоре рассматриваются пять ключевых вопросов: факторы, "
+            "способствующие росту числа диагнозов и назначений СДВГ; "
+            "когнитивный профиль СДВГ и механизмы фармакологического лечения."
+        )
+        subject = _extract_finding_subject(finding)
+        self.assertEqual(subject, "В этом обзоре рассматриваются пять ключевых вопросов")
+
+    def test_colon_after_comma_does_not_override_clause_cut(self):
+        """Если двоеточие идёт ПОСЛЕ первой запятой, оно не относится к
+        границе первой клаузы — обычная логика по запятой должна
+        сработать как раньше."""
+        finding = "Стресс связан со снижением памяти, что подтверждено: у 80% участников."
+        subject = _extract_finding_subject(finding)
+        self.assertEqual(subject, "Стресс связан со снижением памяти")
+
 
 class TestBuildReaderQuestion(unittest.TestCase):
     def test_uses_finding_aware_template_when_finding_available(self):

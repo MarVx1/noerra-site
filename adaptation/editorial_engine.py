@@ -270,13 +270,43 @@ def detect_scenario(article: RawArticle) -> Scenario:
     return "discovery"
 
 
-def _build_title(topic: str, scenario: Scenario) -> str:
-    return _pick(TITLE_PATTERNS[scenario], topic=topic)
+def _build_title(topic: str, scenario: Scenario, avoid_titles: set[str] | None = None) -> str:
+    """avoid_titles — заголовки недавних драфтов той же темы (см.
+    database.get_recent_titles_and_leads_by_topic). Банк шаблонов
+    конечен, и при частой теме random.choice регулярно даёт дословное
+    совпадение (draft id 185/186, 2026-07-15, тема "Когниция") — если
+    среди вариантов есть хоть один, не совпадающий с недавними, выбираем
+    из них; если все совпали бы (банк исчерпан) — используем полный
+    список, это не хуже прежнего поведения.
+    """
+    patterns = TITLE_PATTERNS[scenario]
+    if avoid_titles:
+        candidates = [p for p in patterns if _pick([p], topic=topic) not in avoid_titles]
+        if candidates:
+            patterns = candidates
+    return _pick(patterns, topic=topic)
 
 
-def _build_lead(topic: str, scenario: Scenario, abstract: str, decomposed: dict) -> str:
-    """Лид = шаблонный хук + конкретное предложение из абстракта."""
-    hook = _pick(LEAD_PATTERNS[scenario], topic=topic)
+def _build_lead(
+    topic: str, scenario: Scenario, abstract: str, decomposed: dict,
+    avoid_lead_prefixes: list[str] | None = None,
+) -> str:
+    """Лид = шаблонный хук + конкретное предложение из абстракта.
+
+    avoid_lead_prefixes — лиды недавних драфтов той же темы; хук
+    (шаблонная часть) — их неизменный префикс, реальная находка после
+    него у каждой статьи своя. Как и в _build_title, не самая конкретная
+    находка делает лиды похожими, а повторяющийся хук.
+    """
+    patterns = LEAD_PATTERNS[scenario]
+    if avoid_lead_prefixes:
+        candidates = [
+            p for p in patterns
+            if not any(prev.startswith(_pick([p], topic=topic)) for prev in avoid_lead_prefixes)
+        ]
+        if candidates:
+            patterns = candidates
+    hook = _pick(patterns, topic=topic)
     # Добавляем конкретику из абстракта, если есть
     finding = decomposed.get("finding", "")
     if finding:
@@ -530,8 +560,17 @@ class EditorialEngine:
         if scenario == "practical" and not (decomposed.get("practical") or "").strip():
             scenario = "discovery"
 
-        title = _build_title(topic, scenario)
-        lead = _build_lead(topic, scenario, abstract, decomposed)
+        # Anti-repeat (Stage 3 доп.): избегаем дословного совпадения
+        # заголовка/лида с недавними драфтами той же темы — см.
+        # _build_title/_build_lead. db-запрос обёрнут в try — сбой БД не
+        # должен ронять генерацию текста, максимум теряется anti-repeat.
+        try:
+            avoid_titles, avoid_lead_prefixes = db.get_recent_titles_and_leads_by_topic(topic)
+        except Exception:
+            avoid_titles, avoid_lead_prefixes = set(), []
+
+        title = _build_title(topic, scenario, avoid_titles=avoid_titles)
+        lead = _build_lead(topic, scenario, abstract, decomposed, avoid_lead_prefixes=avoid_lead_prefixes)
 
         main_idea = decomposed.get("finding", "") or _extract_key_sentence(abstract) or _translate(article.title or "")
         method_summary = decomposed.get("method", "")

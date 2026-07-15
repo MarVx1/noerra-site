@@ -116,7 +116,20 @@ def _extract_finding_subject(finding: str, max_words: int = _MAX_FINDING_WORDS) 
     if not cleaned:
         return ""
 
+    # Двоеточие, вводящее перечисление ("рассматриваются пять вопросов:
+    # факторы, ..."), важнее запятой: запятая после такого двоеточия
+    # разделяет не клаузы, а однородные члены ПЕРВОГО пункта списка —
+    # обрезка по ней рвёт мысль посреди первого элемента перечисления
+    # (article id=588, "СДВГ: чего мы раньше не знали" — вопрос обрывался
+    # на «...пять ключевых вопросов: факторы»). Вводная часть до
+    # двоеточия обычно самодостаточна как мысль сама по себе.
+    colon_idx = cleaned.find(":")
     comma_idx = cleaned.find(",")
+    if colon_idx != -1 and (comma_idx == -1 or colon_idx < comma_idx):
+        words_before_colon = len(cleaned[:colon_idx].split())
+        if 3 <= words_before_colon <= _MAX_CLAUSE_WORDS:
+            return cleaned[:colon_idx].strip()
+
     if comma_idx != -1:
         words_before_comma = len(cleaned[:comma_idx].split())
         if 3 <= words_before_comma <= _MAX_CLAUSE_WORDS:

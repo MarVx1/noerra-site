@@ -87,7 +87,7 @@ def main():
         body = "\n\n".join(parts[1:]) if len(parts) > 1 else ""
         visible_text = _shorten_by_paragraphs(body, 700) if body else ""
         if visible_text:
-            post_text = f"{esc_preserve_own_tags(visible_text)}\n\n📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
+            post_text = f"{esc_preserve_own_tags(visible_text)} 👇\n\n📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
             post_text_problems = audit_text(post_text)
             problems.extend(f"[post_text] {p}" for p in post_text_problems)
 

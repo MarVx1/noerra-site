@@ -142,6 +142,24 @@ class TestTopicHelpers(unittest.TestCase):
 
     def test_unknown_topic_falls_back_gracefully(self):
         self.assertTrue(get_topic_ru("not-a-topic"))
+
+    def test_stress_and_psychology_emoji_updated(self):
+        """Регрессия (2026-07-16): "😤" (stress) читается как гнев, не
+        стресс; "💭" (psychology) в тексте поста путается с маркером
+        рассуждения/гипотезы. Заменены на "😓" и "🎭"."""
+        self.assertEqual(get_topic_emoji("stress"), "😓")
+        self.assertEqual(get_topic_emoji("psychology"), "🎭")
+        self.assertNotEqual(get_topic_emoji("stress"), "😤")
+        self.assertNotEqual(get_topic_emoji("psychology"), "💭")
+
+    def test_other_topic_emoji_unchanged(self):
+        """ТЗ прямо просило не трогать остальные 7 эмодзи."""
+        unchanged = {
+            "ADHD": "⚡️", "dopamine": "💊", "sleep": "😴", "anxiety": "😰",
+            "cognition": "🧩", "neuroplasticity": "🔄", "neuroscience": "🧠",
+        }
+        for topic, emoji in unchanged.items():
+            self.assertEqual(get_topic_emoji(topic), emoji)
         self.assertTrue(get_topic_case("not-a-topic", "gen"))
 
 

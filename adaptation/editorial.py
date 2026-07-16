@@ -59,6 +59,13 @@ def generate_telegram_text(article: RawArticle, topic: str, telegraph_url: str |
     if why_block:
         telegram_lines.extend(["", esc(why_block)])
     if telegraph_url:
+        # 👇 в конец последней содержательной строки перед ссылкой —
+        # визуальный указатель "дальше переход по ссылке" (раньше
+        # пользователь добавлял вручную в отдельных постах, 2026-07-16).
+        # Не привязан к конкретному блоку (why_block/short_version) —
+        # добавляется к тому, что физически оказалось последним.
+        if telegram_lines and telegram_lines[-1].strip():
+            telegram_lines[-1] = f"{telegram_lines[-1]} 👇"
         telegram_lines.extend(["", f"📘 <a href='{telegraph_url}'>Читать полностью</a>"])
     if article.source:
         telegram_lines.extend(["", esc(_source_list([article]))])

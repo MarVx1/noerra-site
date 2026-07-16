@@ -115,6 +115,48 @@ class TestSchedulerPipeline(unittest.IsolatedAsyncioTestCase):
     @patch("scheduler.scheduler.RSSParser.run", return_value=[])
     @patch("scheduler.scheduler.YouTubeParser.run", return_value=[])
     @patch("bot.bot.send_draft_for_editor", new_callable=AsyncMock)
+    @patch("scheduler.scheduler._get_existing_urls_batch", return_value=set())
+    @patch("scheduler.scheduler.save_article", return_value=1)
+    @patch("scheduler.scheduler.save_summary")
+    @patch("scheduler.scheduler.Pipeline")
+    @patch("scheduler.scheduler.generate_post", return_value="telegram post")
+    @patch("scheduler.scheduler.generate_summary", return_value="telegraph summary")
+    @patch("scheduler.scheduler.classify", return_value=("dopamine", 0.9))
+    @patch("scheduler.scheduler.score_article", return_value=42)
+    async def test_run_pipeline_post_text_has_pointer_emoji_before_link(
+        self, score_article, classify, generate_summary, generate_post,
+        pipeline_cls, save_summary, save_article, get_urls_batch, send_draft_for_editor,
+        yt_run, rss_run, cyber_run, arxiv_run, pubmed_run,
+    ):
+        """👇 в конец содержания перед ссылкой на Telegraph (2026-07-16) —
+        раньше добавлялся вручную в отдельных постах."""
+        pubmed_run.return_value = [self.article]
+        from adaptation.publication import Publication
+
+        pub = Publication(
+            title="Test", subtitle=None, lead="lead", body="Обычное содержательное тело поста.",
+            short_version="short", full_version="telegraph summary",
+            sources=["pubmed"], topic="dopamine", format="analysis",
+            confidence_score=0.5, audience="general",
+        )
+        pipeline_cls.return_value.run_for_article.return_value = {
+            "draft_id": 123,
+            "publication": pub,
+            "review": {"passed": True, "hard_problems": [], "problems": []},
+        }
+
+        await run_pipeline()
+
+        post_text = save_summary.call_args[0][2]
+        before_link = post_text.split("📘")[0].rstrip()
+        self.assertTrue(before_link.endswith("👇"))
+
+    @patch("scheduler.scheduler.PubMedParser.run", return_value=[])
+    @patch("scheduler.scheduler.ArxivParser.run", return_value=[])
+    @patch("scheduler.scheduler.CyberLeninaParser.run", return_value=[])
+    @patch("scheduler.scheduler.RSSParser.run", return_value=[])
+    @patch("scheduler.scheduler.YouTubeParser.run", return_value=[])
+    @patch("bot.bot.send_draft_for_editor", new_callable=AsyncMock)
     @patch("scheduler.scheduler._get_existing_urls_batch", return_value={"https://example.com/article"})
     @patch("scheduler.scheduler.save_article")
     @patch("scheduler.scheduler.save_summary")

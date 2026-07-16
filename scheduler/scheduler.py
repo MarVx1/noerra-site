@@ -240,16 +240,19 @@ def _run_pipeline_sync():
             # отдельный код, который тот фикс не затронул.
             visible_text = _shorten_by_paragraphs(visible_text, 700) if visible_text else ""
 
+            # 👇 в конец последней содержательной строки перед ссылкой на
+            # Telegraph — визуальный указатель "дальше переход по ссылке"
+            # (раньше добавлялся вручную в отдельных постах, 2026-07-16).
             post_text = (
                 f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"
                 # esc_preserve_own_tags, не esc(): visible_text — это
                 # pub.body, а не голый текст, там уже есть наши <i>/<b>
                 # (аналогия, уровень доказательности) — см. docstring.
-                f"{esc_preserve_own_tags(visible_text)}\n\n"
+                f"{esc_preserve_own_tags(visible_text)} 👇\n\n"
                 f"📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
                 if pub and visible_text else
                 (
-                    f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b>\n\n"
+                    f"{get_topic_emoji(topic)} <b>{esc(pub.title)}</b> 👇\n\n"
                     f"📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"
                     if pub else generate_post(article, topic, "TELEGRAPH_URL")
                 )

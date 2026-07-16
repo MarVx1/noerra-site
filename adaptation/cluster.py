@@ -180,8 +180,11 @@ def build_cluster_post(
         pass
 
     if telegraph_url and telegraph_url != "TELEGRAPH_URL":
+        # 👇 в конец строки перед ссылкой — визуальный указатель "дальше
+        # переход по ссылке" (2026-07-16, см. тот же фикс в editorial.py/
+        # scheduler.py).
         lines += [
-            esc("Полный материал доступен в расширенной версии."),
+            esc("Полный материал доступен в расширенной версии.") + " 👇",
             f"📘 {telegraph_url}",
             "",
         ]

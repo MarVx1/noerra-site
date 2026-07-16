@@ -494,6 +494,25 @@ def _find_sentence(
     return None
 
 
+# Критерии отбора исследований в обзор/мета-анализ — методологическая
+# кухня, не находка и не факт для читателя ("Исследования, в которых
+# оценивались исключительно другие нарушения сна... были исключены",
+# драфт "Сон: итоги последних исследований", 2026-07-16). Список не
+# претендует на полноту, растёт по факту встречаемости на реальных
+# абстрактах обзоров/мета-анализов.
+_ELIGIBILITY_CRITERIA_MARKERS = (
+    "были исключены", "исключались из", "критерии включения", "критерии исключения",
+    "критериям включения", "критериям исключения", "отбирались исследования",
+    "were excluded", "exclusion criteria", "inclusion criteria", "eligible studies",
+    "studies were included", "were included if",
+)
+
+
+def _is_eligibility_criteria_sentence(sentence: str) -> bool:
+    lower = sentence.lower()
+    return any(m in lower for m in _ELIGIBILITY_CRITERIA_MARKERS)
+
+
 # ── Декомпозиция абстракта ─────────────────────────────────────
 # Разлагает текст на компоненты без повторов: каждое предложение
 # используется ровно один раз в одной роли.
@@ -509,26 +528,32 @@ def _decompose_abstract(abstract: str) -> dict[str, str]:
       - method: методология (если есть)
 
     Каждое предложение исходного текста используется максимум в одной роли.
+    Предложения-критерии отбора обзора (см. _is_eligibility_criteria_sentence)
+    не используются вообще ни в одной роли — раньше попадали в method (там
+    ловились по словам "участник"/"выборка"), а без метода утекали дальше
+    в hook/context, которые принимают "любое" оставшееся предложение.
     """
     sentences = _split_sentences(abstract)
     if not sentences:
         return {"hook": "", "context": "", "finding": "", "practical": "", "method": ""}
 
-    used: set[int] = set()
+    skip = {i for i, s in enumerate(sentences) if _is_eligibility_criteria_sentence(s)}
+
+    used: set[int] = set(skip)
 
     # Каждый блок ищется через _find_sentence: сначала среди предложений без
     # латиницы, и только потом среди любых — иначе в статью попадали куски
     # вида "ингибирует последующую индукцию LTP в MML in vitro".
 
     # 1. Ключевая находка (предложение с результатом)
-    finding_idx = _find_sentence(sentences, _has_result_marker, exclude=set())
+    finding_idx = _find_sentence(sentences, _has_result_marker, exclude=set(skip))
 
     # 2. Практический вывод (обычно в конце)
-    exclude = {finding_idx} if finding_idx is not None else set()
+    exclude = ({finding_idx} if finding_idx is not None else set()) | skip
     practical_idx = _find_sentence(sentences, _has_practical_marker, exclude, reverse=True)
 
     # 3. Методология
-    exclude = {i for i in (finding_idx, practical_idx) if i is not None}
+    exclude = {i for i in (finding_idx, practical_idx) if i is not None} | skip
     method_idx = _find_sentence(sentences, _has_method_marker, exclude)
 
     result: dict[str, str] = {"hook": "", "context": "", "finding": "", "practical": "", "method": ""}

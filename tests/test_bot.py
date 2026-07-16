@@ -36,6 +36,7 @@ def _callback(data: str, user_id: int = ADMIN, text: str = "Original text"):
     cb.answer = AsyncMock()
     cb.message.text = text
     cb.message.edit_text = AsyncMock()
+    cb.message.answer = AsyncMock()
     return cb
 
 
@@ -310,9 +311,14 @@ class TestDraftCallbacks(unittest.IsolatedAsyncioTestCase):
         self.assertIn("не найден", cb.answer.await_args.args[0])
 
     async def test_draft_approve_saves_feedback_and_shows_publish_button(self):
+        """Кнопка публикации теперь идёт под ПРЕДПРОСМОТРОМ финального
+        поста (новое сообщение с parse_mode="HTML"), а не под старой
+        карточкой модерации (2026-07-16)."""
         cb = _callback("draft_approve:5")
+        article = {"post_text": "😴 <b>Заголовок</b>\n\nТело поста 👇\n\n📘 <a href='TELEGRAPH_URL'>Читать полностью</a>"}
         with patch.object(b, "ADMIN_ID", ADMIN), \
              patch.object(cb_mod, "get_draft_by_id", return_value=self.DRAFT), \
+             patch.object(cb_mod, "get_article_by_id", return_value=article), \
              patch.object(cb_mod, "save_editor_feedback") as fb, \
              patch.object(cb_mod, "update_article_status") as upd:
             await cb_mod.on_draft_approve(cb)
@@ -320,7 +326,31 @@ class TestDraftCallbacks(unittest.IsolatedAsyncioTestCase):
         fb.assert_called_once()
         self.assertEqual(fb.call_args.args[2], "approved")
         upd.assert_called_once_with(10, "approved")
-        kb_markup = cb.message.edit_text.await_args.kwargs["reply_markup"]
+
+        # Старая карточка: без reply_markup, без parse_mode="HTML".
+        self.assertNotIn("reply_markup", cb.message.edit_text.await_args.kwargs)
+        self.assertNotIn("parse_mode", cb.message.edit_text.await_args.kwargs)
+
+        # Предпросмотр — новое сообщение, HTML, кнопка публикации здесь.
+        preview_call = cb.message.answer.await_args
+        self.assertEqual(preview_call.kwargs["parse_mode"], "HTML")
+        kb_markup = preview_call.kwargs["reply_markup"]
+        self.assertEqual(kb_markup.inline_keyboard[0][0].callback_data, "draft_publish:5")
+        self.assertIn("Тело поста 👇", preview_call.args[0])
+        self.assertIn("ссылка появится при публикации", preview_call.args[0])
+        self.assertNotIn("TELEGRAPH_URL", preview_call.args[0])
+
+    async def test_draft_approve_falls_back_when_no_post_text(self):
+        cb = _callback("draft_approve:5")
+        with patch.object(b, "ADMIN_ID", ADMIN), \
+             patch.object(cb_mod, "get_draft_by_id", return_value=self.DRAFT), \
+             patch.object(cb_mod, "get_article_by_id", return_value={"post_text": None}), \
+             patch.object(cb_mod, "save_editor_feedback"), \
+             patch.object(cb_mod, "update_article_status"):
+            await cb_mod.on_draft_approve(cb)
+
+        fallback_call = cb.message.answer.await_args
+        kb_markup = fallback_call.kwargs["reply_markup"]
         self.assertEqual(kb_markup.inline_keyboard[0][0].callback_data, "draft_publish:5")
 
     async def test_draft_reject_parses_reason_from_callback_data(self):

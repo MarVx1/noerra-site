@@ -397,5 +397,53 @@ class TestRussianOnlyHelpers(unittest.TestCase):
         self.assertIn("недосып", d["finding"].lower())
 
 
+class TestEligibilityCriteriaFilter(unittest.TestCase):
+    """Регрессия (драфт "Сон: итоги последних исследований", article
+    id=923, external_id=42458137, 2026-07-16): критерии отбора обзора
+    ("Studies that... were excluded") попадали в роль method и оттуда —
+    в тело поста, хотя это методологическая кухня, не находка для
+    читателя."""
+
+    def test_exclusion_criteria_sentence_not_used_in_any_role(self):
+        from adaptation.utils import _decompose_abstract
+        abstract = (
+            "This systematic review examined sleep and cognition in older adults. "
+            "We found that poor sleep quality was significantly associated with "
+            "worse cognitive performance in elderly participants. "
+            "Studies that assessed exclusively other sleep disorders and/or other "
+            "cognitive impairment conditions or that did not report participants "
+            "mean age were excluded. "
+            "Ten studies were included in the final analysis."
+        )
+        d = _decompose_abstract(abstract)
+        all_text = " ".join(d.values())
+        self.assertNotIn("were excluded", all_text.lower())
+        self.assertNotIn("assessed exclusively", all_text.lower())
+
+    def test_real_exclusion_sentence_from_pubmed_42458137(self):
+        """Точная фраза из живой публикации, переведённая на русский."""
+        from adaptation.utils import _is_eligibility_criteria_sentence
+        sentence = (
+            "Исследования, в которых оценивались исключительно другие нарушения сна "
+            "и/или другие состояния когнитивных нарушений или в которых не "
+            "указывался средний возраст участников, были исключены."
+        )
+        self.assertTrue(_is_eligibility_criteria_sentence(sentence))
+
+    def test_does_not_flag_ordinary_methodology_sentence(self):
+        from adaptation.utils import _is_eligibility_criteria_sentence
+        sentence = "Было включено десять исследований с общим числом участников 5731."
+        self.assertFalse(_is_eligibility_criteria_sentence(sentence))
+
+    def test_english_inclusion_exclusion_markers(self):
+        from adaptation.utils import _is_eligibility_criteria_sentence
+        self.assertTrue(_is_eligibility_criteria_sentence(
+            "Studies meeting the inclusion criteria were selected for full-text review."
+        ))
+        self.assertTrue(_is_eligibility_criteria_sentence(
+            "Two studies were excluded due to insufficient data."
+        ))
+
+
 if __name__ == '__main__':
     unittest.main()

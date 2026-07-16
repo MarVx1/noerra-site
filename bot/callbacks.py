@@ -11,6 +11,7 @@
 # ============================================================
 
 import logging
+import re
 
 from aiogram import F
 from aiogram.types import CallbackQuery
@@ -18,9 +19,26 @@ from aiogram.types import CallbackQuery
 from bot.bot import dp, is_admin
 from bot.publishing import _publish_article, send_for_moderation
 from bot.keyboards import draft_publish_keyboard
-from database.db import update_article_status, get_draft_by_id, save_editor_feedback
+from database.db import update_article_status, get_draft_by_id, get_article_by_id, save_editor_feedback
 
 logger = logging.getLogger(__name__)
+
+# TELEGRAPH_URL — плейсхолдер в summaries.post_text (см. scheduler.py):
+# реальный URL появляется только в момент публикации, когда создаётся
+# страница Telegraph. Для предпросмотра подставляем нейтральную пометку
+# вместо рабочей ссылки — вёрстка (эмодзи, 👇, разбивка на абзацы)
+# при этом остаётся точно такой же, как в реальном посте.
+_TELEGRAPH_PLACEHOLDER_RE = re.compile(
+    r"<a href=['\"]TELEGRAPH_URL['\"]>(.*?)</a>", re.DOTALL,
+)
+
+
+def _preview_post_text(post_text: str) -> str:
+    """Финальный пост с плейсхолдером ссылки вместо TELEGRAPH_URL —
+    для предпросмотра редактору после одобрения (см. on_draft_approve)."""
+    return _TELEGRAPH_PLACEHOLDER_RE.sub(
+        r"\1 (ссылка появится при публикации)", post_text,
+    )
 
 
 # ── Кнопки одиночной модерации ────────────────────────────────
@@ -87,22 +105,53 @@ async def on_draft_approve(callback: CallbackQuery):
     if draft["article_id"]:
         update_article_status(draft["article_id"], "approved")
 
-    # Показываем кнопку "Опубликовать" после одобрения
     keyboard = draft_publish_keyboard(draft_id)
     await callback.answer("Одобрено! Теперь можно опубликовать.", show_alert=False)
+
+    # ВАЖНО: не используем parse_mode="HTML" на ЭТОЙ карточке —
+    # callback.message.text это уже plain text (с literal <b>, </b>,
+    # <a href='...'> из &lt;b&gt; и т.д.), а parse_mode="HTML" заставит
+    # Telegram попытаться распарсить эти символы как HTML-теги, что
+    # вызовет "Unexpected end tag". Кнопку публикации переносим на новое
+    # сообщение с реальным предпросмотром (ниже) — здесь просто отмечаем
+    # карточку модерации как одобренную.
     try:
-        # ВАЖНО: не используем parse_mode="HTML" — callback.message.text это
-        # уже plain text (с literal <b>, </b>, <a href='...'> из &lt;b&gt; и т.д.),
-        # а parse_mode="HTML" заставит Telegram попытаться распартировать эти
-        # символы как HTML-теги, что вызовет "Unexpected end tag".
         await callback.message.edit_text(
-            callback.message.text + "\n\n✅ Одобрено\n\nНажмите «Опубликовать в канал», чтобы отправить статью.",
-            reply_markup=keyboard,
+            callback.message.text + "\n\n✅ Одобрено — предпросмотр финального поста ниже.",
         )
-        logger.info(f"Draft {draft_id} approved, publish button shown")
     except Exception as e:
         logger.error(f"Failed to edit message after draft_approve: {e}")
-        pass
+
+    # Реальный текст поста, который получит подписчик — тот же
+    # summaries.post_text, что уходит в канал при публикации (см.
+    # scheduler.py), с плейсхолдером вместо ссылки на Telegraph (она
+    # создаётся только в момент публикации). Отдельное НОВОЕ сообщение
+    # с parse_mode="HTML", чтобы вёрстка отрендерилась точно как в канале.
+    article = get_article_by_id(draft["article_id"]) if draft["article_id"] else None
+    post_text = (article["post_text"] if article else "") or ""
+    if post_text:
+        try:
+            await callback.message.answer(
+                f"👁 <b>Предпросмотр финального поста:</b>\n\n{_preview_post_text(post_text)}",
+                parse_mode="HTML",
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+            logger.info(f"Draft {draft_id} approved, post preview sent with publish button")
+        except Exception as e:
+            logger.error(f"Failed to send post preview for draft {draft_id}: {e}")
+    else:
+        # Нет post_text (article_id=0 или ещё не сгенерирован summary) —
+        # кнопку показываем хотя бы на старой карточке, чтобы публикация
+        # оставалась доступна.
+        logger.warning(f"Draft {draft_id}: no post_text for preview, falling back to inline button")
+        try:
+            await callback.message.answer(
+                "⚠️ Предпросмотр недоступен (нет сохранённого текста поста).",
+                reply_markup=keyboard,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send fallback publish button for draft {draft_id}: {e}")
 
 
 @dp.callback_query(F.data.startswith("draft_reject:"))

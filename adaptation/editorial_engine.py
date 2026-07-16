@@ -209,6 +209,50 @@ SIGNIFICANCE_FRAME_PATTERNS = [
     "Такие фундаментальные результаты не дают готовых советов, но именно на них потом строятся более прикладные исследования {topic_gen_lower}.",
 ]
 
+# То же самое по смыслу (нет прямой рекомендации), но БЕЗ утверждения
+# "лабораторное исследование" — для study_type, которые по определению
+# относятся к людям. evidence_classifier.PATTERNS вообще не содержит
+# категории "animal_study"/"in_vitro" — весь его словарь (meta_analysis,
+# systematic_review, randomized_controlled_trial, cohort_study,
+# observational_study, case_report, review) описывает дизайн исследований
+# НА людях. Найдено на живом драфте "Сон: итоги последних исследований"
+# (систематический обзор, доказательность "Высокий") — рамка значимости
+# заявляла "это лабораторное исследование", хотя это обзор человеческих
+# работ, что прямо противоречило метаданным того же поста (2026-07-16).
+SIGNIFICANCE_FRAME_PATTERNS_HUMAN = [
+    "Прямого применения к повседневной жизни здесь нет — это шаг к более полному пониманию {topic_gen_lower}.",
+    "Такие фундаментальные результаты не дают готовых советов, но именно на них потом строятся более прикладные исследования {topic_gen_lower}.",
+    "Конкретных рекомендаций авторы не дают, но данные уточняют картину происходящего с {topic_inst_lower}.",
+]
+
+# study_type, которые сам классификатор (intelligence/research_analysis/
+# evidence_classifier.py) определяет только для исследований на людях.
+_HUMAN_STUDY_TYPES = frozenset({
+    "meta_analysis", "systematic_review", "randomized_controlled_trial",
+    "cohort_study", "observational_study", "case_report", "review",
+})
+
+# Единственный доступный сигнал "это животные/in vitro, не люди" —
+# evidence_classifier такую категорию не определяет вообще. Список не
+# претендует на полноту, растёт по факту встречаемости на реальных
+# абстрактах (уже переведены на русский на этом этапе пайплайна).
+_ANIMAL_STUDY_MARKERS = ("мыш", "крыс", "грызун")
+
+
+def _is_likely_animal_or_lab_study(abstract: str) -> bool:
+    lower = (abstract or "").lower()
+    return any(marker in lower for marker in _ANIMAL_STUDY_MARKERS)
+
+
+def _significance_frame_patterns(study_type: str, abstract: str) -> list[str]:
+    if study_type in _HUMAN_STUDY_TYPES:
+        return SIGNIFICANCE_FRAME_PATTERNS_HUMAN
+    if _is_likely_animal_or_lab_study(abstract):
+        return SIGNIFICANCE_FRAME_PATTERNS
+    # study_type == "unknown" и нет явных маркеров животных/лаборатории —
+    # честнее не утверждать ничего конкретного о характере исследования.
+    return SIGNIFICANCE_FRAME_PATTERNS_HUMAN
+
 SCENARIO_MARKERS = {
     "debunk": [
         "debunk", "myth", "false", "not true", "contrary", "refute", "opposed", "misconception",
@@ -323,8 +367,8 @@ def _format_excerpt(abstract: str, max_sentences: int = 2) -> str:
     return " ".join(sentences[:max_sentences])
 
 
-def _collect_body_blocks(topic: str, decomposed: dict) -> list[str]:
-    """Собирает блоки body из декомпозиции, исключая finding (уже в lead).
+def _collect_body_blocks(topic: str, decomposed: dict, abstract: str = "", study_type: str = "unknown") -> list[str]:
+    """Собирает блоки body из декомпозиции, исключая finding (уже в лиде).
 
     Порядок: context → method → hook → practical.
     Каждое предложение используется ровно один раз.
@@ -343,58 +387,59 @@ def _collect_body_blocks(topic: str, decomposed: dict) -> list[str]:
     if practical:
         blocks.append(_format_practical(topic, practical))
     else:
-        # Рамка значимости вместо тишины — см. SIGNIFICANCE_FRAME_PATTERNS.
-        blocks.append(_pick(SIGNIFICANCE_FRAME_PATTERNS, topic=topic))
+        # Рамка значимости вместо тишины — см. _significance_frame_patterns:
+        # выбор зависит от study_type/abstract, не случаен (см. её докстринг).
+        blocks.append(_pick(_significance_frame_patterns(study_type, abstract), topic=topic))
     return blocks
 
 
-def _build_discovery(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_discovery(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Discovery: новый результат, который меняет взгляд на тему."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_confirmation(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_confirmation(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Confirmation: подтверждение ранее высказанной гипотезы."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_debunk(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_debunk(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Debunk: опровержение распространённого мнения."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_discussion(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_discussion(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Discussion: спорная тема с разными точками зрения."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_review(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_review(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Review: обзор нескольких работ по теме."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_explanation(topic: str, abstract: str, decomposed: dict) -> list[str]:
+def _build_explanation(topic: str, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Explanation: объяснение механизма простым языком."""
-    return _collect_body_blocks(topic, decomposed)
+    return _collect_body_blocks(topic, decomposed, abstract, study_type)
 
 
-def _build_body(topic: str, scenario: Scenario, abstract: str, decomposed: dict) -> list[str]:
+def _build_body(topic: str, scenario: Scenario, abstract: str, decomposed: dict, study_type: str = "unknown") -> list[str]:
     """Строит основную часть статьи без повторов предложений."""
     if scenario == "discovery":
-        return _build_discovery(topic, abstract, decomposed)
+        return _build_discovery(topic, abstract, decomposed, study_type)
     if scenario == "confirmation":
-        return _build_confirmation(topic, abstract, decomposed)
+        return _build_confirmation(topic, abstract, decomposed, study_type)
     if scenario == "debunk":
-        return _build_debunk(topic, abstract, decomposed)
+        return _build_debunk(topic, abstract, decomposed, study_type)
     if scenario == "practical":
         return _build_practical_block(topic, abstract, decomposed)
     if scenario == "discussion":
-        return _build_discussion(topic, abstract, decomposed)
+        return _build_discussion(topic, abstract, decomposed, study_type)
     if scenario == "review":
-        return _build_review(topic, abstract, decomposed)
+        return _build_review(topic, abstract, decomposed, study_type)
     if scenario == "explanation":
-        return _build_explanation(topic, abstract, decomposed)
-    return _build_discovery(topic, abstract, decomposed)
+        return _build_explanation(topic, abstract, decomposed, study_type)
+    return _build_discovery(topic, abstract, decomposed, study_type)
 
 
 def _build_practical_block(topic: str, abstract: str, decomposed: dict) -> list[str]:
@@ -741,7 +786,7 @@ class EditorialEngine:
         if reader_question:
             blocks.append(reader_question)
 
-        body_blocks = _build_body(topic, scenario, abstract, decomposed)
+        body_blocks = _build_body(topic, scenario, abstract, decomposed, passport.get("study_type", "unknown"))
         # Ритмический переход перед содержательной частью (Rule 10) — только
         # если есть что вводить, иначе связка повисает перед аналогией.
         if body_blocks:
@@ -790,7 +835,7 @@ class EditorialEngine:
         abstract = passport["abstract"]
         decomposed = passport.get("decomposed", {})
 
-        body_blocks = _build_body(topic, scenario, abstract, decomposed)
+        body_blocks = _build_body(topic, scenario, abstract, decomposed, passport.get("study_type", "unknown"))
         limitations = passport.get("limitations", "")
         if not limitations and passport.get("study_type") in ("unknown", "observational_study", "case_report"):
             limitations = "Требуются дополнительные исследования для подтверждения выводов."

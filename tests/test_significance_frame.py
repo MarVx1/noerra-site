@@ -2,9 +2,16 @@ import unittest
 
 from parsers.base import RawArticle
 from adaptation.editorial_engine import (
-    EditorialEngine, SIGNIFICANCE_FRAME_PATTERNS, HONEST_NO_PRACTICAL_PATTERNS,
-    _collect_body_blocks,
+    EditorialEngine, SIGNIFICANCE_FRAME_PATTERNS, SIGNIFICANCE_FRAME_PATTERNS_HUMAN,
+    HONEST_NO_PRACTICAL_PATTERNS, _collect_body_blocks,
 )
+from adaptation.text_patterns import _pick
+
+
+def _all_renderings(patterns, topic):
+    """_pick() применяет падеж темы и авто-фикс предлогов (с/со) —
+    сравнивать нужно с этим, а не с сырым .format()."""
+    return [_pick([p], topic=topic) for p in patterns]
 
 
 class TestCollectBodyBlocksSignificanceFallback(unittest.TestCase):
@@ -14,13 +21,36 @@ class TestCollectBodyBlocksSignificanceFallback(unittest.TestCase):
     пропускала пустой practical. Теперь должен появиться fallback."""
 
     def test_appends_significance_frame_when_practical_empty(self):
+        """Без явного study_type/abstract с маркерами животных — честный
+        нейтральный (human) банк, не утверждение про лабораторию."""
         decomposed = {"context": "", "method": "", "hook": "", "practical": ""}
         blocks = _collect_body_blocks("stress", decomposed)
         self.assertTrue(blocks, "Блок значимости не добавился при пустом practical")
-        self.assertIn(blocks[-1], [
-            p.format(topic_prep_lower="стрессе", topic_gen_lower="стресса")
-            for p in SIGNIFICANCE_FRAME_PATTERNS
-        ])
+        self.assertIn(blocks[-1], _all_renderings(SIGNIFICANCE_FRAME_PATTERNS_HUMAN, "stress"))
+
+    def test_uses_lab_frame_for_animal_study_abstract(self):
+        """Реальный случай (article id=483) — study_type "unknown" (сам
+        классификатор не различает животных/людей), но абстракт явно
+        про мышей — тут уместна рамка "лабораторное исследование"."""
+        decomposed = {"context": "", "method": "", "hook": "", "practical": ""}
+        blocks = _collect_body_blocks(
+            "stress", decomposed,
+            abstract="Исследование на мышах показало изменения поведения.",
+        )
+        self.assertIn(blocks[-1], _all_renderings(SIGNIFICANCE_FRAME_PATTERNS, "stress"))
+
+    def test_uses_human_frame_for_classified_human_study_type(self):
+        """Реальный дефект (драфт "Сон: итоги последних исследований",
+        систематический обзор, доказательность "Высокий"): рамка
+        значимости заявляла "это лабораторное исследование", хотя
+        study_type=systematic_review — по определению исследование на
+        людях (2026-07-16)."""
+        decomposed = {"context": "", "method": "", "hook": "", "practical": ""}
+        blocks = _collect_body_blocks(
+            "sleep", decomposed, abstract="", study_type="systematic_review",
+        )
+        self.assertIn(blocks[-1], _all_renderings(SIGNIFICANCE_FRAME_PATTERNS_HUMAN, "sleep"))
+        self.assertNotIn("лабораторное исследование", blocks[-1])
 
     def test_uses_real_practical_value_when_present(self):
         decomposed = {"context": "", "method": "", "hook": "", "practical": "Снижение стресса помогает сну."}
@@ -32,6 +62,7 @@ class TestCollectBodyBlocksSignificanceFallback(unittest.TestCase):
         """ТЗ: рамка значимости — не то же самое, что 'выводов нет' —
         разные банки, не задваивание одного и того же под новым именем."""
         self.assertNotEqual(set(SIGNIFICANCE_FRAME_PATTERNS), set(HONEST_NO_PRACTICAL_PATTERNS))
+        self.assertNotEqual(set(SIGNIFICANCE_FRAME_PATTERNS_HUMAN), set(HONEST_NO_PRACTICAL_PATTERNS))
 
 
 class TestSignificanceFrameInRealArticle(unittest.TestCase):

@@ -28,6 +28,17 @@ QUERIES = [
     "дофамин мотивация",
 ]
 
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(text: str) -> str:
+    """API подсвечивает совпавший поисковый термин в name/annotation
+    тегами <b>...</b> (найдено на живом ответе, 2026-07-16, запросы
+    'нейропластичность'/'СДВГ нейронаука') — не HTML-разметка статьи,
+    а just подсветка поиска, для заголовка/аннотации не нужна."""
+    return _TAG_RE.sub("", text or "")
+
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -85,8 +96,14 @@ class CyberLeninaParser(BaseParser):
                 resp.raise_for_status()
                 data = resp.json()
 
-                # Проверяем структуру ответа — API мог измениться
-                hits = data.get("hits", [])
+                # Проверяем структуру ответа — API мог измениться.
+                # Ключ верхнего уровня — "articles", не "hits" (тот никогда
+                # не встречался ни в одном живом ответе — ровно поэтому
+                # раньше всегда получали 0 статей, найдено 2026-07-16 по
+                # логу диагностики ниже, который сам же и вывел настоящие
+                # ключи). Внутри элемента нет поля "id" вообще — только
+                # "link" (относительный путь вида "/article/n/slug").
+                hits = data.get("articles", [])
                 if not hits and data:
                     # Логируем ключи ответа для диагностики изменения схемы
                     logger.warning(
@@ -96,16 +113,19 @@ class CyberLeninaParser(BaseParser):
 
                 results = []
                 for hit in hits:
-                    url = f"https://cyberleninka.ru/article/n/{hit.get('id', '')}"
+                    link = hit.get("link", "")
+                    if not link:
+                        continue
+                    url = f"https://cyberleninka.ru{link}"
                     if url in seen:
                         continue
                     seen.add(url)
                     results.append(RawArticle(
-                        title=hit.get("name", "").strip(),
+                        title=_strip_tags(hit.get("name", "")).strip(),
                         url=url,
-                        abstract=hit.get("annotation", "").strip(),
+                        abstract=_strip_tags(hit.get("annotation", "")).strip(),
                         source="cyberleninka",
-                        external_id=str(hit.get("id", "")),
+                        external_id=link.rsplit("/", 1)[-1],
                         is_peer_reviewed=True,
                     ))
                 return results

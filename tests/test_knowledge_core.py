@@ -6,6 +6,7 @@ from intelligence.research_analysis import (
     extract_scientific_claims,
     detect_study_type,
     classify_evidence_strength,
+    is_animal_or_invitro_study,
     normalize_claim,
     split_sentences,
 )
@@ -105,6 +106,135 @@ class TestEvidenceStrength(unittest.TestCase):
     def test_weak_strength(self):
         self.assertEqual(classify_evidence_strength("case_report", False), "weak")
         self.assertEqual(classify_evidence_strength("unknown", False), "preliminary")
+
+
+class TestIsAnimalOrInvitroStudy(unittest.TestCase):
+    """PATTERNS в detect_study_type() описывает ТОЛЬКО дизайн исследования
+    (meta_analysis/RCT/cohort_study/...) — одни и те же слова одинаково
+    употребимы и для людей, и для животных/in vitro, поэтому study_type
+    сам по себе не даёт сигнала "кого исследовали" (найдено 2026-07-16,
+    живой пример — article id=499, мышиное исследование с "8 cohorts"
+    классифицировалось как study_type="cohort_study")."""
+
+    def test_detects_common_markers(self):
+        for text in (
+            "Mice were tested in an open field.",
+            "We used a mouse model of depression.",
+            "A rodent model of anxiety.",
+            "Murine hippocampal neurons were recorded.",
+            "Cells were grown in vitro.",
+            "Primary cell culture experiments.",
+            "Zebrafish larvae were imaged.",
+            "Monkeys performed a reaching task.",
+            "Macaque prefrontal cortex recordings.",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(is_animal_or_invitro_study(text))
+
+    def test_rat_uses_word_boundary_not_substring(self):
+        """Голое 'rat' подстрокой ловит 'demonstrate'/'moderate'/
+        'generate'/'narrate' — калибровано на реальных абстрактах."""
+        self.assertTrue(is_animal_or_invitro_study("Rats were tested daily."))
+        self.assertTrue(is_animal_or_invitro_study("A study of rat behavior."))
+        for text in (
+            "The results demonstrate a clear effect.",
+            "This is a moderate improvement.",
+            "New cells generate over time.",
+            "Authors narrate their findings.",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(is_animal_or_invitro_study(text))
+
+    def test_ordinary_human_study_not_flagged(self):
+        self.assertFalse(is_animal_or_invitro_study(
+            "Participants completed a questionnaire about sleep quality."
+        ))
+
+    def test_empty_text_returns_false(self):
+        self.assertFalse(is_animal_or_invitro_study(""))
+
+
+class TestEvidenceStrengthAnimalDowngrade(unittest.TestCase):
+    """Реальный дефект (ТЗ 2026-07-16): одна и та же методология давала
+    одинаковый уровень доказательности и людям, и грызунам —
+    "РКИ на крысах" -> moderate_high, "мета-анализ грызуновых моделей"
+    -> high, наравне с человеческими исследованиями того же дизайна."""
+
+    def test_meta_analysis_of_animals_downgraded_from_high(self):
+        self.assertEqual(
+            classify_evidence_strength("meta_analysis", True, is_animal_or_invitro=True),
+            "moderate",
+        )
+        # Человеческий мета-анализ — не тронут.
+        self.assertEqual(
+            classify_evidence_strength("meta_analysis", True, is_animal_or_invitro=False),
+            "high",
+        )
+
+    def test_rct_on_animals_downgraded_from_moderate_high(self):
+        self.assertEqual(
+            classify_evidence_strength("randomized_controlled_trial", True, is_animal_or_invitro=True),
+            "moderate",
+        )
+
+    def test_unknown_study_type_not_downgraded_further(self):
+        """ТЗ прямо отметило: 'Обычное исследование на мышах ->
+        type=unknown evidence=limited — разумно' — уже достаточно низкая
+        оценка, понижать её ещё дальше до 'preliminary' не нужно."""
+        self.assertEqual(
+            classify_evidence_strength("unknown", True, is_animal_or_invitro=True),
+            "limited",
+        )
+        self.assertEqual(
+            classify_evidence_strength("unknown", True, is_animal_or_invitro=False),
+            "limited",
+        )
+
+    def test_default_flag_is_false_backward_compatible(self):
+        self.assertEqual(classify_evidence_strength("meta_analysis", True), "high")
+
+
+class TestBuildResearchPassportForAnimalStudies(unittest.TestCase):
+    """Сквозная проверка через build_research_passport() — не только
+    саму функцию classify_evidence_strength() в изоляции."""
+
+    def test_rat_rct_gets_downgraded_evidence(self):
+        article = RawArticle(
+            title="A randomized controlled trial of ketamine in rats",
+            url="https://example.com/rat-rct",
+            abstract="Rats were randomly assigned to treatment or control.",
+            source="pubmed",
+            is_peer_reviewed=True,
+        )
+        passport = build_research_passport(article, "stress", article_id=1)
+        self.assertEqual(passport.study_type, "randomized_controlled_trial")
+        self.assertEqual(passport.evidence_strength, "moderate")
+
+    def test_rodent_meta_analysis_gets_downgraded_evidence(self):
+        article = RawArticle(
+            title="Meta-analysis of rodent models of depression",
+            url="https://example.com/rodent-meta",
+            abstract="We pooled data from 40 rodent studies.",
+            source="pubmed",
+            is_peer_reviewed=True,
+        )
+        passport = build_research_passport(article, "stress", article_id=2)
+        self.assertEqual(passport.study_type, "meta_analysis")
+        self.assertEqual(passport.evidence_strength, "moderate")
+
+    def test_human_systematic_review_unaffected(self):
+        """Регрессия в обратную сторону так же плоха — человеческие
+        обзоры не должны понизиться (article id=923, PubMed 42458137)."""
+        article = RawArticle(
+            title="Association between circadian rhythm disturbances and cognitive decline in the elderly: a systematic review.",
+            url="https://example.com/923",
+            abstract="This systematic review included studies evaluating circadian disturbances in elderly participants.",
+            source="pubmed",
+            is_peer_reviewed=True,
+        )
+        passport = build_research_passport(article, "sleep", article_id=3)
+        self.assertEqual(passport.study_type, "systematic_review")
+        self.assertEqual(passport.evidence_strength, "high")
 
 
 class TestTrustLevel(unittest.TestCase):

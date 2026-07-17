@@ -19,6 +19,7 @@ from intelligence.research_analysis.claim_extractor import (
 from intelligence.research_analysis.evidence_classifier import (
     detect_study_type,
     classify_evidence_strength,
+    is_animal_or_invitro_study,
 )
 
 from intelligence.research_analysis.text_extractors import (

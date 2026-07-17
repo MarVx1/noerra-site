@@ -64,6 +64,36 @@ class TestCollectBodyBlocksSignificanceFallback(unittest.TestCase):
         self.assertNotEqual(set(SIGNIFICANCE_FRAME_PATTERNS), set(HONEST_NO_PRACTICAL_PATTERNS))
         self.assertNotEqual(set(SIGNIFICANCE_FRAME_PATTERNS_HUMAN), set(HONEST_NO_PRACTICAL_PATTERNS))
 
+    def test_animal_marker_wins_over_human_study_type_ordering(self):
+        """Регрессия (ТЗ 2026-07-16): проверка на животных стояла ПОСЛЕ
+        проверки study_type и потому была недостижима для мета-анализа/РКИ
+        на грызунах — те же слова дизайна одинаково употребимы и для
+        людей, и для животных. "Мы объединили данные 40 исследований на
+        грызунах и мышах" при study_type="meta_analysis" раньше получало
+        человеческий банк вместо лабораторного."""
+        decomposed = {"context": "", "method": "", "hook": "", "practical": ""}
+        blocks = _collect_body_blocks(
+            "stress", decomposed,
+            abstract="Мы объединили данные 40 исследований на грызунах и мышах.",
+            study_type="meta_analysis",
+        )
+        self.assertIn(blocks[-1], _all_renderings(SIGNIFICANCE_FRAME_PATTERNS, "stress"))
+
+    def test_new_animal_markers_detected(self):
+        """Обезьяны/макаки/данио/in vitro — расширение списка маркеров
+        (2026-07-16), "обезьян" подтверждено живым переводом (article
+        id=876)."""
+        decomposed = {"context": "", "method": "", "hook": "", "practical": ""}
+        for abstract in (
+            "Исследование на обезьянах показало изменения активности.",
+            "У макак наблюдалось изменение поведения.",
+            "Личинки данио были помечены флуоресцентным маркером.",
+            "Клетки культивировали in vitro в течение недели.",
+        ):
+            with self.subTest(abstract=abstract):
+                blocks = _collect_body_blocks("stress", decomposed, abstract=abstract)
+                self.assertIn(blocks[-1], _all_renderings(SIGNIFICANCE_FRAME_PATTERNS, "stress"))
+
 
 class TestSignificanceFrameInRealArticle(unittest.TestCase):
     def test_stress_isolation_animal_study_gets_significance_block(self):

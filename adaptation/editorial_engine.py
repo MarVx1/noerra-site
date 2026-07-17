@@ -233,10 +233,21 @@ _HUMAN_STUDY_TYPES = frozenset({
 })
 
 # Единственный доступный сигнал "это животные/in vitro, не люди" —
-# evidence_classifier такую категорию не определяет вообще. Список не
-# претендует на полноту, растёт по факту встречаемости на реальных
-# абстрактах (уже переведены на русский на этом этапе пайплайна).
-_ANIMAL_STUDY_MARKERS = ("мыш", "крыс", "грызун")
+# evidence_classifier такую категорию не определяет вообще (весь его
+# словарь — meta_analysis/systematic_review/RCT/... — это ДИЗАЙН, а не
+# ОБЪЕКТ исследования, см. is_animal_or_invitro_study() и комментарий
+# там же в intelligence/research_analysis/evidence_classifier.py).
+# Список не претендует на полноту, растёт по факту встречаемости на
+# реальных абстрактах (уже переведены на русский на этом этапе
+# пайплайна) — калибровано на noerra.db, 2026-07-16: "обезьян"
+# подтверждено живым переводом (article id=876, "моторную кору обезьян").
+# "клеточн"/"культур" намеренно НЕ добавлены — живых случаев cell-culture
+# в корпусе не нашлось, а "клеточный" — обычное слово и в исследованиях
+# на людях ("клеточная терапия", "клеточный иммунитет"), добавлять
+# по одной лишь гипотезе не стал (см. историю про "rem"/"axon").
+_ANIMAL_STUDY_MARKERS = (
+    "мыш", "крыс", "грызун", "обезьян", "макак", "данио", "in vitro",
+)
 
 
 def _is_likely_animal_or_lab_study(abstract: str) -> bool:
@@ -245,10 +256,18 @@ def _is_likely_animal_or_lab_study(abstract: str) -> bool:
 
 
 def _significance_frame_patterns(study_type: str, abstract: str) -> list[str]:
-    if study_type in _HUMAN_STUDY_TYPES:
-        return SIGNIFICANCE_FRAME_PATTERNS_HUMAN
+    # Маркер "животные/лаборатория в самом абстракте" проверяется ПЕРВЫМ:
+    # study_type — это дизайн ("как исследовали"), а не объект ("кого") —
+    # мета-анализ/РКИ на грызунах всё равно попадёт в _HUMAN_STUDY_TYPES
+    # по формальному дизайну, если проверить его раньше (найдено 2026-07-16:
+    # "Мы объединили данные 40 исследований на грызунах и мышах" при
+    # study_type="meta_analysis" получало человеческий банк). Один и тот
+    # же словарь дизайна описывает и людей, и животных — сигнал "кого"
+    # сильнее и должен побеждать при конфликте.
     if _is_likely_animal_or_lab_study(abstract):
         return SIGNIFICANCE_FRAME_PATTERNS
+    if study_type in _HUMAN_STUDY_TYPES:
+        return SIGNIFICANCE_FRAME_PATTERNS_HUMAN
     # study_type == "unknown" и нет явных маркеров животных/лаборатории —
     # честнее не утверждать ничего конкретного о характере исследования.
     return SIGNIFICANCE_FRAME_PATTERNS_HUMAN

@@ -171,7 +171,10 @@ class TestRegressionCorpus(unittest.TestCase):
         self.assertNotIn("обзорный обзор", text.lower())
         has_significance = any(
             marker in text for marker in
-            ("Это лабораторное исследование", "Прямого применения", "Такие фундаментальные результаты")
+            (
+                "Это лабораторное исследование", "Прямого применения",
+                "Такие фундаментальные результаты", "Конкретных рекомендаций",
+            )
         )
         has_practical = "Практический вывод" in text or "На практике это означает" in text
         self.assertTrue(has_significance or has_practical)

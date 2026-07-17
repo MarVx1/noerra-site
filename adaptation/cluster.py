@@ -8,7 +8,9 @@ from classifier.classifier import get_topic_emoji, get_topic_ru
 from adaptation.utils import _translate, _extract_key_sentence, _clean_text, esc
 from adaptation.editorial_engine import EditorialEngine
 from domain.knowledge.mental_models import get_model_brief
-from intelligence.research_analysis.evidence_classifier import detect_study_type, classify_evidence_strength
+from intelligence.research_analysis.evidence_classifier import (
+    detect_study_type, classify_evidence_strength, is_animal_or_invitro_study,
+)
 from classifier.classifier import get_topic_case
 
 logger = logging.getLogger(__name__)
@@ -88,7 +90,7 @@ def _evidence_badge(articles: list[RawArticle]) -> str:
     a = articles[0]
     text = f"{a.title} {a.abstract or ''}"
     study_type = detect_study_type(text, title=a.title or "")
-    evidence = classify_evidence_strength(study_type, a.is_peer_reviewed)
+    evidence = classify_evidence_strength(study_type, a.is_peer_reviewed, is_animal_or_invitro_study(text))
     badges = {
         "high": "🔬 Сильная доказательность (метаанализ/RCT)",
         "moderate_high": "🔬 Сильная доказательность (RCT)",

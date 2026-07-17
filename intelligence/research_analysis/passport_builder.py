@@ -5,6 +5,7 @@ from domain.knowledge.entities import ResearchPassport
 from intelligence.research_analysis.evidence_classifier import (
     detect_study_type,
     classify_evidence_strength,
+    is_animal_or_invitro_study,
 )
 
 from intelligence.research_analysis.text_extractors import (
@@ -44,10 +45,13 @@ def build_research_passport(
     study_type = detect_study_type(text, title=article.title or "")
 
 
-    # Определяем уровень доказательности
+    # Определяем уровень доказательности — с учётом того, что одна и та же
+    # методология (meta_analysis/RCT/cohort_study/...) даёт более сильное
+    # свидетельство о людях, чем о мышах/in vitro (see evidence_classifier.py).
     evidence_strength = classify_evidence_strength(
         study_type,
-        article.is_peer_reviewed
+        article.is_peer_reviewed,
+        is_animal_or_invitro_study(text),
     )
 
 

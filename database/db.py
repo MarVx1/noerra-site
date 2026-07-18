@@ -328,6 +328,72 @@ def save_summary(article_id: int, summary_ru: str, post_text: str):
         )
 
 
+def replace_summary(article_id: int, summary_ru: str, post_text: str) -> None:
+    """Как save_summary(), но идемпотентно — для scripts/regenerate_summaries.py.
+
+    save_summary() всегда INSERT, без уникального ограничения на
+    article_id — повторный запуск плодил бы вторую строку, и все места,
+    читающие summaries через LEFT JOIN без LIMIT 1 (get_article_by_id и
+    остальные, database/db.py), начали бы получать статью задвоенной."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM summaries WHERE article_id = ?", (article_id,))
+        conn.execute(
+            "INSERT INTO summaries (article_id, summary_ru, post_text) VALUES (?, ?, ?)",
+            (article_id, summary_ru, post_text),
+        )
+
+
+def get_latest_draft_for_article(article_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM drafts WHERE article_id = ? ORDER BY id DESC LIMIT 1",
+            (article_id,),
+        ).fetchone()
+
+
+def update_draft_content(
+    draft_id: int,
+    title: str,
+    lead: str,
+    body: str,
+    short_version: str,
+    full_version: str,
+    sources: str,
+    topic: str,
+    format: str,
+    confidence: float,
+    audience: str,
+) -> None:
+    """Обновляет текстовые поля существующего драфта, не трогая id/status —
+    /drafts (bot/commands.py) и карточка модерации в Telegram ссылаются
+    на конкретный draft_id, INSERT новой строки оставил бы их указывать
+    на устаревший текст."""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE drafts SET
+                title = ?, lead = ?, body = ?, short_version = ?, full_version = ?,
+                sources = ?, topic = ?, format = ?, confidence = ?, audience = ?
+               WHERE id = ?""",
+            (title, lead, body, short_version, full_version, sources, topic, format, confidence, audience, draft_id),
+        )
+
+
+def get_articles_by_statuses(statuses: tuple[str, ...]) -> list[sqlite3.Row]:
+    """Статьи в любом из перечисленных статусов, со старым сохранённым
+    текстом (для отчёта "было -> стало") — для scripts/regenerate_summaries.py."""
+    with get_conn() as conn:
+        placeholders = ",".join("?" * len(statuses))
+        return conn.execute(
+            f"""SELECT a.id, a.source, a.external_id, a.title, a.abstract, a.url,
+                       a.topic, a.score, a.status, s.post_text AS old_post_text
+                FROM articles a
+                LEFT JOIN summaries s ON s.article_id = a.id
+                WHERE a.status IN ({placeholders})
+                ORDER BY a.id""",
+            statuses,
+        ).fetchall()
+
+
 def get_recent_titles_and_leads_by_topic(topic: str, limit: int = 10) -> tuple[set[str], list[str]]:
     """Заголовки и лиды недавних драфтов по теме — для anti-repeat в
     _build_title()/_build_lead() (см. editorial_engine.py): банк

@@ -703,6 +703,29 @@ def search_articles_fts(query: str, limit: int = 10) -> list[sqlite3.Row]:
         """, (query, limit)).fetchall()
 
 
+def get_published_articles_for_site() -> list[sqlite3.Row]:
+    """Опубликованные статьи для scripts/generate_site.py — берём текст
+    из drafts (title/body/full_version), не summaries: summaries.summary_ru
+    отсутствует у части ранних статей (article id=397 — опубликована до
+    того, как save_summary() стал вызываться надёжно для каждой статьи),
+    а drafts есть у всех published без исключения (проверено на
+    noerra.db, 2026-07-19). d.body уже без дублирующей заголовок строки
+    (см. adaptation/pipeline.py:Pipeline.run_for_article — та же сборка)."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT a.id, a.url AS source_url, a.created_at, a.topic,
+                      d.title, d.body, d.full_version,
+                      p.telegraph_url, p.published_at
+               FROM articles a
+               JOIN drafts d ON d.id = (
+                   SELECT id FROM drafts WHERE article_id = a.id ORDER BY id DESC LIMIT 1
+               )
+               LEFT JOIN publications p ON p.article_id = a.id
+               WHERE a.status = 'published'
+               ORDER BY COALESCE(p.published_at, a.created_at) DESC"""
+        ).fetchall()
+
+
 def get_youtube_by_topic(topic: str):
     """Возвращает лучшее YouTube видео по теме за последние 24 часа."""
     with get_conn() as conn:

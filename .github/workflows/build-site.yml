@@ -1,0 +1,51 @@
+name: Build site
+
+# Компьютер (Планировщик заданий Windows + scripts/generate_site.py)
+# отвечает только за то, чего GitHub физически не может сделать сам —
+# читать личный noerra.db и коммитить data/published.json. Всё
+# остальное — рендер HTML и деплой в docs/ — происходит здесь, на
+# серверах GitHub, без участия локальной машины (см. ТЗ 2026-07-19,
+# "звено Б"). Это НЕ звено А: этот workflow никогда не открывает и не
+# видит noerra.db.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/published.json"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-site
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # render_from_json.py специально не требует requirements.txt —
+      # только stdlib (см. его докстринг) — install-шаг не нужен.
+      - name: Render docs/ from data/published.json
+        env:
+          SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
+        run: python scripts/render_from_json.py
+
+      - name: Commit and push docs/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "docs/ unchanged, nothing to commit"
+            exit 0
+          fi
+          git commit -m "Rebuild site from published.json [skip ci]"
+          git push

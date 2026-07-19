@@ -29,6 +29,14 @@ TELEGRAPH_AUTHOR_URL = os.getenv("TELEGRAPH_AUTHOR_URL", "https://t.me/noerra_pu
 # Database
 DATABASE_PATH = os.getenv("DATABASE_PATH", "noerra.db")
 
+# Site (scripts/generate_site.py, scripts/render_from_json.py) — базовый
+# URL, под которым GitHub Pages реально отдаёт сайт (обычно
+# https://<username>.github.io/<repo>/, со слэшем на конце). Пока репозиторий
+# не подключён к GitHub Pages, значение по умолчанию — заглушка: canonical
+# и sitemap.xml будут указывать на неё, пока переменная не выставлена в
+# реальный адрес и сайт не перегенерирован.
+SITE_BASE_URL = (os.getenv("SITE_BASE_URL") or "https://example.github.io/noerra-bot/").rstrip("/") + "/"
+
 # Schedule
 PARSE_INTERVAL_MINUTES = _int_env("PARSE_INTERVAL_MINUTES", 360)
 DIGEST_HOUR = _int_env("DIGEST_HOUR", 10)

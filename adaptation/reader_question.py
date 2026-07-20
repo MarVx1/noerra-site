@@ -83,6 +83,24 @@ _FINDING_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Находка иногда оказывается не констатацией результата ("мы обнаружили,
+# что..."), а оценочно-рекомендательным предложением из мотивационной
+# части абстракта ("Крайне важно выявить защитные факторы, которые
+# способствуют благополучию этой группы населения.") — типичный зачин
+# академического абстракта перед описанием самого исследования, который
+# _decompose_abstract() иногда выбирает как decomposed["finding"]/
+# passport["main_idea"] за неимением лучшего кандидата. FINDING_QUESTION_PATTERNS
+# рассчитаны на находку-констатацию ("мы обнаружили X") и грамматически
+# не сочетаются с рекомендацией — получается смесь двух разных
+# предложений ("В чём конкретно суть находки о психологии — Крайне важно
+# выявить защитные факторы?", реальный опубликованный пост, article
+# id=1064, 2026-07-20). Список маркеров не претендует на полноту — растёт
+# по факту встречаемости, как и остальные такие списки в проекте.
+_EVALUATIVE_RECOMMENDATION_RE = re.compile(
+    r"^(крайне\s+|очень\s+)?(важно|необходимо|следует|нужно|нужны|требуется|стоит)\b",
+    re.IGNORECASE,
+)
+
 _MAX_FINDING_WORDS = 14
 # Шире, чем _MAX_FINDING_WORDS: законченная клауза длиннее 14 слов всё
 # равно читается лучше, чем обрубленная на середине по числу слов —
@@ -168,13 +186,19 @@ def build_reader_question(topic: str, scenario: str, finding: str = "") -> str:
     id 534/604, 2026-07-15). Отличаем по доле слов: если после очистки
     осталось почти столько же слов, сколько было в исходной находке —
     обрезки не произошло, вопрос стал бы полным повтором лида.
+
+    Ещё один случай, когда finding-вопрос не подходит: находка —
+    оценочно-рекомендательное предложение ("Крайне важно выявить...", из
+    мотивационной части абстракта), а не констатация результата — см.
+    _EVALUATIVE_RECOMMENDATION_RE и article id=1064 (2026-07-20).
     """
     finding_subject = _extract_finding_subject(finding)
     finding_patterns = FINDING_QUESTION_PATTERNS.get(scenario)
     finding_words = len(finding.split()) if finding else 0
     subject_words = len(finding_subject.split()) if finding_subject else 0
     barely_shortened = finding_words > 0 and subject_words >= 0.75 * finding_words
-    if finding_subject and finding_patterns and not barely_shortened:
+    is_recommendation = bool(finding_subject and _EVALUATIVE_RECOMMENDATION_RE.match(finding_subject))
+    if finding_subject and finding_patterns and not barely_shortened and not is_recommendation:
         return _pick(finding_patterns, topic=topic, finding=finding_subject)
     patterns = QUESTION_PATTERNS.get(scenario, QUESTION_PATTERNS["discovery"])
     return _pick(patterns, topic=topic)

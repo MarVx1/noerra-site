@@ -110,6 +110,26 @@ class TestBuildReaderQuestion(unittest.TestCase):
         question = build_reader_question("ADHD", "discovery", finding=finding)
         self.assertIn("Синдром дефицита внимания", question)
 
+    def test_falls_back_to_generic_when_finding_is_a_recommendation(self):
+        """Реальный опубликованный пост (article id=1064, 2026-07-20):
+        находка оказалась оценочно-рекомендательным предложением из
+        мотивационной части абстракта, не констатацией результата —
+        finding-шаблон дал грамматически несвязный вопрос "В чём
+        конкретно суть находки о психологии — Крайне важно выявить
+        защитные факторы?" (смесь двух разных предложений)."""
+        finding = (
+            "Крайне важно выявить защитные факторы, которые способствуют "
+            "благополучию этой группы населения."
+        )
+        question = build_reader_question("psychology", "discovery", finding=finding)
+        self.assertNotIn("Крайне важно выявить", question)
+        self.assertTrue(question.strip().endswith("?"))
+
+    def test_recommendation_without_intensifier_also_falls_back(self):
+        finding = "Необходимо определить факторы риска, влияющие на исход лечения."
+        question = build_reader_question("stress", "discovery", finding=finding)
+        self.assertNotIn("Необходимо определить", question)
+
     def test_falls_back_to_generic_for_scenario_without_finding_templates(self):
         """explanation не расширялся finding-шаблонами (не входил в
         разобранный дефект) — должен остаться прежним generic-вопросом,

@@ -359,6 +359,42 @@ class TestEscPreserveOwnTags(unittest.TestCase):
         self.assertEqual(esc_preserve_own_tags(""), "")
 
 
+class TestCapitalizeSentencesPreservesTags(unittest.TestCase):
+    """Регрессия (реальный опубликованный пост, article id=1064,
+    2026-07-20): блок структуры, начинающийся с <i>/<b>, читался
+    _capitalize_sentences() как "пропустить '<', заглавить следующую
+    букву" — а следующая буква оказывалась буквой самого тега,
+    "<i>Привычки..." превращалось в "<I>Привычки...". Закрывающий тег
+    не страдал (перед ним нет "[.!?]\\s+"), поэтому регистр открывающего
+    и закрывающего тега расходился в одном и том же блоке."""
+
+    def test_does_not_capitalize_opening_italic_tag(self):
+        from adaptation.utils import _capitalize_sentences
+        text = "<i>Привычки поведения похожи на протоптанные лыжни.</i>"
+        self.assertEqual(_capitalize_sentences(text), text)
+
+    def test_does_not_capitalize_opening_bold_tag(self):
+        from adaptation.utils import _capitalize_sentences
+        text = "<b>Уровень доказательности:</b> ограниченный."
+        self.assertEqual(_capitalize_sentences(text), text)
+
+    def test_still_capitalizes_lowercase_start_without_tag(self):
+        """Основной сценарий функции не должен был пострадать от фикса —
+        см. её собственный докстринг про "пищевое вознаграждение"."""
+        from adaptation.utils import _capitalize_sentences
+        self.assertEqual(
+            _capitalize_sentences("пищевое вознаграждение, включающее что-то."),
+            "Пищевое вознаграждение, включающее что-то.",
+        )
+
+    def test_still_capitalizes_after_sentence_boundary(self):
+        from adaptation.utils import _capitalize_sentences
+        self.assertEqual(
+            _capitalize_sentences("Обычное предложение. другое предложение."),
+            "Обычное предложение. Другое предложение.",
+        )
+
+
 class TestRussianOnlyHelpers(unittest.TestCase):
     """Требование: в статье не должно быть английского текста."""
 

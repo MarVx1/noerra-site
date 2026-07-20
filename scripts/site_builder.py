@@ -48,36 +48,69 @@ def _paragraphs_html(body_html: str) -> str:
 
 
 _PAGE_CSS = """
-    @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap');
-    :root {
-        --bg: #0d1e21; --bg-raised: #132a2e; --border: #22403f;
-        --text: #e9ece9; --text-dim: #9fb3ae; --text-faint: #6b8380;
-        --gold: #c9974a; --gold-bright: #e3bd7e;
+    @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&display=swap');
+    :root{
+        --bg:#0d1e21; --bg-raised:#14343a; --border:#22403f;
+        --text:#e9ece9; --text-dim:#9fb3ae; --text-faint:#6b8380;
+        --primary:#2e9d8a; --gold:#d99a3c; --gold-bright:#ead9b0;
+        --serif:'Newsreader',Georgia,serif; --sans:'Inter',-apple-system,sans-serif;
     }
-    * { box-sizing: border-box; }
-    body { font: 16px/1.6 Inter, -apple-system, Segoe UI, Roboto, sans-serif;
-           max-width: 700px; margin: 0 auto; padding: 48px 20px 64px;
-           color: var(--text); background: var(--bg); }
-    a { color: var(--gold-bright); text-decoration: none; border-bottom: 1px solid rgba(201,151,74,0.35); }
-    a:hover { border-bottom-color: var(--gold-bright); }
-    h1 { font-family: 'Newsreader', Georgia, serif; font-weight: 600;
-         font-size: 2em; line-height: 1.25; letter-spacing: -0.01em; margin-bottom: 0.4em; }
-    h1 a { border-bottom: none; color: var(--text); }
-    .meta { color: var(--text-dim); font-size: 0.95em; margin-bottom: 2.5em; }
-    .meta a { color: var(--gold); }
-    .topic-tag { display: inline-block; background: rgba(201,151,74,0.12); color: var(--gold);
-                 border-radius: 10px; padding: 2px 10px; font-size: 0.85em; }
-    footer { margin-top: 3em; padding-top: 1.2em; border-top: 1px solid var(--border);
-             font-size: 0.9em; color: var(--text-faint); }
-    footer a { display: inline-block; margin-right: 1.2em; color: var(--gold); }
-    ul.article-list { list-style: none; padding: 0; }
-    ul.article-list li { padding: 14px 0; border-bottom: 1px solid var(--border); }
-    ul.article-list a { font-family: 'Newsreader', Georgia, serif; font-weight: 500;
-                         font-size: 1.08em; color: var(--text); border-bottom: none; }
-    ul.article-list a:hover { color: var(--gold-bright); }
-    ul.article-list .date { color: var(--text-faint); font-size: 0.85em; margin-left: 4px; }
-    h2.topic-heading { font-family: 'Newsreader', Georgia, serif; font-weight: 600;
-                        margin-top: 2.2em; font-size: 1.3em; color: var(--gold-bright); }
+    *{box-sizing:border-box; margin:0; padding:0;}
+    body{background:var(--bg); color:var(--text); font-family:var(--sans);
+         line-height:1.5; -webkit-font-smoothing:antialiased;}
+    a{color:inherit; text-decoration:none;}
+
+    header{max-width:760px; margin:0 auto; padding:64px 24px 40px; border-bottom:1px solid var(--border);}
+    .wordmark{display:flex; align-items:baseline; gap:14px; margin-bottom:22px;}
+    .wordmark .mark{font-family:var(--serif); font-size:26px; font-weight:600; color:var(--gold-bright); letter-spacing:0.02em;}
+    .wordmark .tagline{font-size:13px; color:var(--text-faint); letter-spacing:0.03em;}
+    header p.lede{font-family:var(--serif); font-size:21px; font-weight:400; line-height:1.5; color:var(--text); max-width:600px;}
+    header p.lede .accent{color:var(--gold-bright); font-style:italic;}
+    .channel-link{display:inline-flex; align-items:center; gap:8px; margin-top:24px; font-size:14px; color:var(--gold); border:1px solid var(--border); padding:9px 16px; border-radius:20px; transition:border-color .15s;}
+    .channel-link:hover{border-color:var(--gold);}
+    .channel-link::before{content:"\\2192"; color:var(--gold-bright);}
+
+    nav.topics{max-width:760px; margin:0 auto; padding:28px 24px 0; display:flex; flex-wrap:wrap; gap:8px;}
+    nav.topics a{font-family:var(--sans); font-size:13px; color:var(--text-dim); background:transparent; border:1px solid var(--border); border-radius:14px; padding:6px 13px; transition:all .15s;}
+    nav.topics a:hover{color:var(--bg); background:var(--gold-bright); border-color:var(--gold-bright);}
+
+    main{max-width:760px; margin:0 auto; padding:32px 24px 100px;}
+    h2.topic-heading{font-family:var(--serif); font-weight:600; font-size:15px; color:var(--gold); margin:34px 0 6px; letter-spacing:0.01em;}
+    ul.article-list{list-style:none;}
+    .entry{display:grid; grid-template-columns:1fr auto; gap:18px; align-items:start; padding:22px 0; border-bottom:1px solid var(--border);}
+    .entry h3{font-family:var(--serif); font-weight:500; font-size:19px; line-height:1.35;}
+    .entry h3 a{transition:color .15s;}
+    .entry h3 a:hover{color:var(--gold-bright);}
+    .entry .date{font-size:12px; color:var(--text-faint); white-space:nowrap; text-align:right; padding-top:6px;}
+
+    footer{max-width:760px; margin:0 auto; padding:36px 24px 60px; border-top:1px solid var(--border); font-size:13px; color:var(--text-faint);}
+    footer a{color:var(--gold); margin-right:1.2em;}
+
+    /* article page */
+    .topbar{max-width:680px; margin:0 auto; padding:28px 24px 0; display:flex; justify-content:space-between; align-items:center;}
+    .topbar a{font-size:14px; color:var(--text-dim);}
+    .topbar a:hover{color:var(--gold-bright);}
+    .topbar .mark{font-family:var(--serif); font-weight:600; color:var(--gold-bright); font-size:17px;}
+    article{max-width:680px; margin:0 auto; padding:40px 24px 30px;}
+    .kicker{display:flex; align-items:center; gap:10px; margin-bottom:18px; font-size:13px; color:var(--text-faint);}
+    .kicker .topic-tag{color:var(--gold); border:1px solid rgba(201,151,74,0.35); border-radius:10px; padding:2px 9px; font-size:11.5px;}
+    article h1{font-family:var(--serif); font-weight:600; font-size:34px; line-height:1.28; margin-bottom:22px; letter-spacing:-0.01em;}
+    .prose{font-size:16.5px; line-height:1.75; color:var(--text);}
+    .prose p{margin-bottom:22px; max-width:62ch;}
+    .prose strong{color:var(--gold-bright); font-weight:500;}
+    .source-link{display:inline-flex; align-items:center; gap:6px; font-size:14px; color:var(--gold); margin-top:8px; border-bottom:1px solid rgba(201,151,74,0.3); padding-bottom:1px;}
+    .article-footer{max-width:680px; margin:50px auto 0; padding:28px 24px 60px; border-top:1px solid var(--border);}
+    .cta{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
+    .cta p{font-family:var(--serif); font-size:17px; color:var(--text-dim); max-width:32ch;}
+    .cta a.btn{background:var(--gold-bright); color:var(--bg); font-weight:600; font-size:14px; padding:11px 22px; border-radius:22px; white-space:nowrap;}
+    .fineprint{margin-top:26px; font-size:12.5px; color:var(--text-faint); line-height:1.6;}
+
+    @media (max-width:560px){
+        header{padding:44px 20px 32px;}
+        article h1{font-size:27px;}
+        .entry .date{display:none;}
+        .entry{grid-template-columns:1fr;}
+    }
 """
 
 
@@ -89,17 +122,23 @@ def render_article_html(article: dict, base_url: str) -> str:
     source_url = html.escape(article["source_url"] or "", quote=True)
     telegraph_url = article.get("telegraph_url")
 
+    source_line = (
+        f'    <a class="source-link" href="{source_url}">&rarr; Оригинал исследования</a>\n'
+        if source_url else ""
+    )
     telegraph_line = (
-        f'      <a href="{html.escape(telegraph_url, quote=True)}">Открыть в Telegraph</a>\n'
+        f'    <a class="source-link" href="{html.escape(telegraph_url, quote=True)}" style="margin-left:1.5em;">&rarr; Открыть в Telegraph</a>\n'
         if telegraph_url else ""
     )
+
+    kicker_topic = f'<span class="topic-tag">{topic_ru}</span>' if topic_ru else ""
 
     return f"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
+<title>{title} — Noerra</title>
 <meta name="description" content="{description}">
 <link rel="canonical" href="{canonical}">
 <meta property="og:type" content="article">
@@ -109,16 +148,29 @@ def render_article_html(article: dict, base_url: str) -> str:
 <style>{_PAGE_CSS}</style>
 </head>
 <body>
-  <p><a href="../index.html">&larr; Все статьи</a></p>
-  <article>
-    <p class="meta"><span class="topic-tag">{topic_ru}</span> &middot; {article['date']}</p>
-    <h1>{title}</h1>
+<div class="topbar">
+  <a href="../index.html">&larr; Все разборы</a>
+  <span class="mark">Noerra</span>
+</div>
+
+<article>
+  <div class="kicker">
+    {kicker_topic}
+    <span>{article['date']}</span>
+  </div>
+  <h1>{title}</h1>
+  <div class="prose">
 {_paragraphs_html(article['body_html'])}
-  </article>
-  <footer>
-      <a href="{source_url}">Источник</a>
-{telegraph_line}      <a href="{html.escape(CHANNEL_URL, quote=True)}">Канал Noerra в Telegram</a>
-  </footer>
+{source_line}  </div>
+</article>
+
+<div class="article-footer">
+  <div class="cta">
+    <p>Такие разборы выходят регулярно в Telegram</p>
+    <a class="btn" href="{html.escape(CHANNEL_URL, quote=True)}">Подписаться &rarr;</a>
+  </div>
+  <p class="fineprint">Noerra — независимый разбор научных публикаций. Мы не публикуем ради количества, не используем кликбейт и не выдаём гипотезы за факты.</p>
+</div>
 </body>
 </html>
 """
@@ -133,15 +185,22 @@ def render_index_html(articles: list[dict], base_url: str) -> str:
     for topic_ru in sorted(by_topic):
         items = by_topic[topic_ru]
         rows = "\n".join(
-            f'    <li><a href="articles/{slug_for(a)}">{html.escape(a["title"])}</a> '
-            f'<span class="date">{a["date"]}</span></li>'
+            f'      <li class="entry">\n'
+            f'        <h3><a href="articles/{slug_for(a)}">{html.escape(a["title"])}</a></h3>\n'
+            f'        <span class="date">{a["date"]}</span>\n'
+            f'      </li>'
             for a in items
         )
         sections.append(
-            f'  <h2 class="topic-heading">{html.escape(topic_ru)} ({len(items)})</h2>\n'
-            f'  <ul class="article-list">\n{rows}\n  </ul>'
+            f'    <h2 class="topic-heading">{html.escape(topic_ru)} ({len(items)})</h2>\n'
+            f'    <ul class="article-list">\n{rows}\n    </ul>'
         )
-    body = "\n".join(sections) if sections else "  <p>Пока нет опубликованных статей.</p>"
+    body = "\n".join(sections) if sections else "    <p>Пока нет опубликованных статей.</p>"
+
+    # фильтр по темам — ведёт к якорям секций (простые ссылки, без JS)
+    topic_pills = "\n".join(
+        f'  <a href="#">{html.escape(t)}</a>' for t in sorted(by_topic)
+    )
 
     return f"""<!doctype html>
 <html lang="ru">
@@ -154,9 +213,27 @@ def render_index_html(articles: list[dict], base_url: str) -> str:
 <style>{_PAGE_CSS}</style>
 </head>
 <body>
-  <h1>{html.escape(SITE_TITLE)}</h1>
-  <p class="meta">{html.escape(SITE_DESCRIPTION)} &mdash; <a href="{html.escape(CHANNEL_URL, quote=True)}">канал в Telegram</a></p>
+<header>
+  <div class="wordmark">
+    <span class="mark">Noerra</span>
+    <span class="tagline">научные разборы без кликбейта</span>
+  </div>
+  <p class="lede">Мы не публикуем ради количества. Каждая статья — реальное исследование, переведённое и объяснённое так, чтобы было <span class="accent">приятно дочитать до конца</span>.</p>
+  <a class="channel-link" href="{html.escape(CHANNEL_URL, quote=True)}">Читать в Telegram</a>
+</header>
+
+<nav class="topics" aria-label="Темы">
+{topic_pills}
+</nav>
+
+<main>
 {body}
+</main>
+
+<footer>
+  Noerra — независимый разбор научных публикаций. Источники: PubMed, arXiv, Frontiers, CyberLeninka.<br>
+  Мы не публикуем ради количества, не используем кликбейт и не выдаём гипотезы за факты.
+</footer>
 </body>
 </html>
 """

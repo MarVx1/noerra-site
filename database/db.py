@@ -705,22 +705,35 @@ def search_articles_fts(query: str, limit: int = 10) -> list[sqlite3.Row]:
 
 def get_published_articles_for_site() -> list[sqlite3.Row]:
     """Опубликованные статьи для scripts/generate_site.py — берём текст
-    из drafts (title/body/full_version), не summaries: summaries.summary_ru
+    из drafts (title/lead/body/full_version), не summaries: summaries.summary_ru
     отсутствует у части ранних статей (article id=397 — опубликована до
     того, как save_summary() стал вызываться надёжно для каждой статьи),
     а drafts есть у всех published без исключения (проверено на
     noerra.db, 2026-07-19). d.body уже без дублирующей заголовок строки
-    (см. adaptation/pipeline.py:Pipeline.run_for_article — та же сборка)."""
+    (см. adaptation/pipeline.py:Pipeline.run_for_article — та же сборка);
+    d.lead передаётся отдельно для лид-цитаты на странице статьи —
+    структурно это тот же текст, что и первый абзац d.body (см.
+    scripts/generate_site.py, где абзац убирается из тела при совпадении).
+
+    evidence_strength — LEFT JOIN на последнюю (см. research_passports
+    дубли по article_id=1, 90 строк — не связано с published, но на
+    всякий случай тот же паттерн "последняя по id") research_passports,
+    не INNER: у части старых published-статей паспорта может не быть,
+    тогда бейдж на странице просто не рендерится (см. site_builder.py)."""
     with get_conn() as conn:
         return conn.execute(
             """SELECT a.id, a.url AS source_url, a.created_at, a.topic,
-                      d.title, d.body, d.full_version,
-                      p.telegraph_url, p.published_at
+                      d.title, d.lead, d.body, d.full_version,
+                      p.telegraph_url, p.published_at,
+                      rp.evidence_strength
                FROM articles a
                JOIN drafts d ON d.id = (
                    SELECT id FROM drafts WHERE article_id = a.id ORDER BY id DESC LIMIT 1
                )
                LEFT JOIN publications p ON p.article_id = a.id
+               LEFT JOIN research_passports rp ON rp.id = (
+                   SELECT id FROM research_passports WHERE article_id = a.id ORDER BY id DESC LIMIT 1
+               )
                WHERE a.status = 'published'
                ORDER BY COALESCE(p.published_at, a.created_at) DESC"""
         ).fetchall()

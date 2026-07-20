@@ -29,8 +29,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import site_builder  # noqa: E402
 
+from adaptation.editorial_engine import _evidence_ru  # noqa: E402
 from adaptation.utils import _shorten, _clean_text, esc_preserve_own_tags  # noqa: E402
-from classifier.classifier import get_topic_ru  # noqa: E402
+from classifier.classifier import get_topic_ru, get_topic_emoji  # noqa: E402
 from config.settings import SITE_BASE_URL  # noqa: E402
 from database.db import get_published_articles_for_site  # noqa: E402
 
@@ -45,22 +46,71 @@ DATA_FILE = REPO_ROOT / "data" / "published.json"
 # с запасом от лимита ~155-160, за которым Google обрезает сниппет.
 DESCRIPTION_MAX_LEN = 155
 
+# Эмодзи для бейджа доказательности на сайте — сам текст бейджа берём из
+# _evidence_ru() (adaptation/editorial_engine.py), а не заводим второй
+# перевод шести значений evidence_strength: та же функция уже формирует
+# строку "Уровень доказательности: ..." в самом посте/карточке модерации
+# бота, так что бейдж на сайте называет то же самое тем же словом.
+_EVIDENCE_EMOJI = {
+    "high": "🔬",
+    "moderate_high": "🔬",
+    "moderate": "📊",
+    "limited": "📊",
+    "preliminary": "💭",
+    "weak": "💭",
+}
+
+
+def _evidence_badge(evidence_strength: str | None) -> str | None:
+    if not evidence_strength:
+        return None
+    emoji = _EVIDENCE_EMOJI.get(evidence_strength, "📊")
+    text = _evidence_ru(evidence_strength)
+    # НЕ .capitalize(): та функция заодно лочит регистр всего остального
+    # хвоста строки, а _evidence_ru() возвращает и "высокий (RCT)" —
+    # capitalize() испортил бы обратно в "высокий (rct)".
+    return f"{emoji} {text[:1].upper()}{text[1:]}"
+
+
+def _split_lead_from_body(lead: str, body: str) -> str:
+    """Убирает из тела статьи первый абзац, если он — тот же текст, что
+    отдельно хранящийся lead (структурно так и есть, см. docstring
+    get_published_articles_for_site(): build_structure() кладёт lead
+    первым абзацем и в full_text/body тоже). Рендерится отдельным
+    блоком .lede на странице статьи (site_builder.render_article_html) —
+    без этой вырезки лид дублировался бы дословно первым абзацем prose.
+    Сравниваем СЫРЫЕ (неэкранированные) строки, раз simplify_text() в
+    generate_text() в теории мог бы разойтись с сырым passport["lead"] —
+    если не совпало, ничего не вырезаем и просто теряем дедуп, а не абзац."""
+    if not lead:
+        return body
+    parts = body.split("\n\n", 1)
+    if parts and parts[0].strip() == lead.strip():
+        return parts[1] if len(parts) > 1 else ""
+    return body
+
 
 def _row_to_article(row) -> dict:
     body_text = row["body"] or row["full_version"] or ""
     plain = _clean_text(body_text)
     date = (row["published_at"] or row["created_at"] or "")[:10]
+    topic = row["topic"] or ""
+    lead = row["lead"] or ""
+    body_without_lead = _split_lead_from_body(lead, body_text)
     return {
         "id": row["id"],
         "title": row["title"] or "",
-        "topic": row["topic"] or "",
-        "topic_ru": get_topic_ru(row["topic"] or ""),
+        "topic": topic,
+        "topic_ru": get_topic_ru(topic),
+        "topic_emoji": get_topic_emoji(topic),
         # esc_preserve_own_tags: body_text содержит наши собственные <i>/<b>
         # (аналогия, доказательность) вперемешку с сырым текстом, где могут
         # встретиться случайные "<"/">" ("p < .001") — та же обработка, что
         # применяется к post_text в scheduler.py при сборке поста в канал.
-        "body_html": esc_preserve_own_tags(body_text),
+        "lead_html": esc_preserve_own_tags(lead) if lead else "",
+        "body_html": esc_preserve_own_tags(body_without_lead),
         "description": _shorten(plain, DESCRIPTION_MAX_LEN),
+        "evidence_badge": _evidence_badge(row["evidence_strength"]),
         "source_url": row["source_url"] or "",
         "telegraph_url": row["telegraph_url"],
         "date": date or "1970-01-01",

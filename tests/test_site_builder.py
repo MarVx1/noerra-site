@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 
 from scripts.site_builder import (
     build_site, clear_output_dir, render_article_html, render_index_html,
-    render_robots_txt, render_sitemap_xml, slug_for,
+    render_robots_txt, render_sitemap_xml, slug_for, _format_date_ru,
 )
 
 BASE_URL = "https://example.github.io/noerra-bot/"
@@ -17,15 +17,21 @@ def _sample_articles():
     return [
         {
             "id": 483, "title": "Стресс: неожиданный поворот", "topic": "stress",
-            "topic_ru": "Стресс", "body_html": "Первый абзац.\n\n<I>Аналогия.</i>",
+            "topic_ru": "Стресс", "topic_emoji": "😓",
+            "lead_html": "Есть неожиданная деталь в устройстве стресса.",
+            "body_html": "Первый абзац.\n\n<I>Аналогия.</i>",
             "description": "Короткое описание статьи про стресс.",
+            "evidence_badge": "🔬 Высокий (RCT)",
             "source_url": "https://pubmed.ncbi.nlm.nih.gov/1/",
             "telegraph_url": "https://telegra.ph/stress-1", "date": "2026-07-15",
         },
         {
             "id": 877, "title": "Дофамин: как это работает", "topic": "dopamine",
-            "topic_ru": "Дофамин", "body_html": "Текст про дофамин.",
+            "topic_ru": "Дофамин", "topic_emoji": "💊",
+            "lead_html": "",
+            "body_html": "Текст про дофамин.",
             "description": "Короткое описание статьи про дофамин.",
+            "evidence_badge": None,
             "source_url": "https://pubmed.ncbi.nlm.nih.gov/2/",
             "telegraph_url": None, "date": "2026-07-16",
         },
@@ -44,6 +50,15 @@ class TestSlugFor(unittest.TestCase):
         self.assertNotEqual(a, b)
 
 
+class TestFormatDateRu(unittest.TestCase):
+    def test_converts_iso_to_human_russian(self):
+        self.assertEqual(_format_date_ru("2026-07-19"), "19 июля 2026")
+        self.assertEqual(_format_date_ru("2026-01-01"), "1 января 2026")
+
+    def test_invalid_input_returned_unchanged(self):
+        self.assertEqual(_format_date_ru("not-a-date"), "not-a-date")
+
+
 class TestRenderArticleHtml(unittest.TestCase):
     def test_canonical_points_into_articles_subdir(self):
         """Регрессия: canonical/og:url раньше указывали на
@@ -60,8 +75,10 @@ class TestRenderArticleHtml(unittest.TestCase):
         )
 
     def test_title_and_h1_present(self):
+        """Эталон (demo_article.html) — <title> с суффиксом " — Noerra",
+        <h1> без него (голый заголовок статьи)."""
         html = render_article_html(_sample_articles()[0], BASE_URL)
-        self.assertIn("<title>Стресс: неожиданный поворот</title>", html)
+        self.assertIn("<title>Стресс: неожиданный поворот — Noerra</title>", html)
         self.assertIn("<h1>Стресс: неожиданный поворот</h1>", html)
 
     def test_meta_description_present(self):
@@ -88,14 +105,74 @@ class TestRenderArticleHtml(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_lede_rendered_when_lead_present(self):
+        """ТЗ 2026-07-20, п.5 — лид-цитата отдельным блоком .lede."""
+        html = render_article_html(_sample_articles()[0], BASE_URL)
+        self.assertIn('<p class="lede">Есть неожиданная деталь в устройстве стресса.</p>', html)
+
+    def test_lede_omitted_when_lead_empty(self):
+        html = render_article_html(_sample_articles()[1], BASE_URL)
+        self.assertNotIn('class="lede"', html)
+
+    def test_evidence_badge_in_kicker_when_present(self):
+        """ТЗ 2026-07-20, п.4 — бейдж доказательности рядом с темой/датой."""
+        html = render_article_html(_sample_articles()[0], BASE_URL)
+        self.assertIn('<span class="evidence">🔬 Высокий (RCT)</span>', html)
+
+    def test_evidence_badge_omitted_when_absent(self):
+        """Статья без research_passports не должна ронять рендер — бейдж
+        просто не выводится (см. scripts/generate_site.py:_evidence_badge)."""
+        html = render_article_html(_sample_articles()[1], BASE_URL)
+        self.assertNotIn('class="evidence"', html)
+
+    def test_topic_emoji_and_date_in_kicker(self):
+        html = render_article_html(_sample_articles()[0], BASE_URL)
+        self.assertIn('<span class="emoji">😓</span>', html)
+        self.assertIn("Стресс &middot; 15 июля 2026", html)
+
+    def test_no_key_finding_card(self):
+        """ТЗ 2026-07-20, п.6 — сознательно решено НЕ генерировать карточку
+        "главная находка": надёжного источника текста для неё нет в
+        персистентных данных (см. комментарий в site_builder.py)."""
+        html = render_article_html(_sample_articles()[0], BASE_URL)
+        self.assertNotIn('class="card"', html)
+        self.assertNotIn("ГЛАВНАЯ НАХОДКА", html)
+
 
 class TestRenderIndexHtml(unittest.TestCase):
-    def test_groups_by_topic_and_links_articles(self):
+    def test_flat_list_no_topic_grouping(self):
+        """ТЗ 2026-07-20, п.1 — единый список статей, без секций по темам."""
         html = render_index_html(_sample_articles(), BASE_URL)
-        self.assertIn("Стресс", html)
-        self.assertIn("Дофамин", html)
+        self.assertNotIn('class="topic-heading"', html)
+        self.assertNotIn("<ul", html)
+
+    def test_links_to_both_articles(self):
+        html = render_index_html(_sample_articles(), BASE_URL)
         self.assertIn('href="articles/article-483.html"', html)
         self.assertIn('href="articles/article-877.html"', html)
+
+    def test_entry_shows_emoji_description_and_date(self):
+        """ТЗ 2026-07-20, п.2/3 — эмодзи темы и подводка-описание в списке."""
+        html = render_index_html(_sample_articles(), BASE_URL)
+        self.assertIn('<div class="emoji">😓</div>', html)
+        self.assertIn("<p>Короткое описание статьи про стресс.</p>", html)
+        self.assertIn('<div class="meta">15 июля 2026</div>', html)
+
+    def test_entry_evidence_badge_present_and_absent(self):
+        """ТЗ 2026-07-20, п.4 — бейдж доказательности в списке, если есть."""
+        html = render_index_html(_sample_articles(), BASE_URL)
+        self.assertIn('<span class="evidence">🔬 Высокий (RCT)</span>', html)
+        # У второй статьи evidence_badge=None — бейджа для неё в выводе нет,
+        # но сам класс "evidence" встречается один раз (от первой статьи).
+        self.assertEqual(html.count('class="evidence"'), 1)
+
+    def test_topic_pills_only_for_present_topics(self):
+        """Таблички тем — только реально встречающиеся, не все 9 канонических
+        (demo_index.html показывает полный список как статичный макет)."""
+        html = render_index_html(_sample_articles(), BASE_URL)
+        self.assertIn(">😓 Стресс</button>", html)
+        self.assertIn(">💊 Дофамин</button>", html)
+        self.assertNotIn("⚡️ СДВГ</button>", html)
 
     def test_empty_list_does_not_crash(self):
         html = render_index_html([], BASE_URL)

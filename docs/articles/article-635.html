@@ -13,9 +13,9 @@
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&display=swap');
     :root{
-        --bg:#0d1e21; --bg-raised:#14343a; --border:#22403f;
+        --bg:#0d1e21; --bg-raised:#132a2e; --border:#22403f;
         --text:#e9ece9; --text-dim:#9fb3ae; --text-faint:#6b8380;
-        --primary:#2e9d8a; --gold:#d99a3c; --gold-bright:#ead9b0;
+        --gold:#c9974a; --gold-bright:#e3bd7e;
         --serif:'Newsreader',Georgia,serif; --sans:'Inter',-apple-system,sans-serif;
     }
     *{box-sizing:border-box; margin:0; padding:0;}
@@ -23,6 +23,7 @@
          line-height:1.5; -webkit-font-smoothing:antialiased;}
     a{color:inherit; text-decoration:none;}
 
+    /* header (индекс) */
     header{max-width:760px; margin:0 auto; padding:64px 24px 40px; border-bottom:1px solid var(--border);}
     .wordmark{display:flex; align-items:baseline; gap:14px; margin-bottom:22px;}
     .wordmark .mark{font-family:var(--serif); font-size:26px; font-weight:600; color:var(--gold-bright); letter-spacing:0.02em;}
@@ -33,35 +34,55 @@
     .channel-link:hover{border-color:var(--gold);}
     .channel-link::before{content:"\2192"; color:var(--gold-bright);}
 
+    /* фильтр тем — чисто визуальный, без JS: сузить страницу до одной темы
+       можно средствами CSS/JS не пришлось, кнопки не функциональны, как и
+       в эталоне (demo_index.html) — там тоже просто <button>, без обработчиков. */
     nav.topics{max-width:760px; margin:0 auto; padding:28px 24px 0; display:flex; flex-wrap:wrap; gap:8px;}
-    nav.topics a{font-family:var(--sans); font-size:13px; color:var(--text-dim); background:transparent; border:1px solid var(--border); border-radius:14px; padding:6px 13px; transition:all .15s;}
-    nav.topics a:hover{color:var(--bg); background:var(--gold-bright); border-color:var(--gold-bright);}
+    nav.topics button{font-family:var(--sans); font-size:13px; color:var(--text-dim); background:transparent; border:1px solid var(--border); border-radius:14px; padding:6px 13px; cursor:pointer; transition:all .15s;}
+    nav.topics button:hover, nav.topics button.active{color:var(--bg); background:var(--gold-bright); border-color:var(--gold-bright);}
 
+    /* список статей (индекс) */
     main{max-width:760px; margin:0 auto; padding:32px 24px 100px;}
-    h2.topic-heading{font-family:var(--serif); font-weight:600; font-size:15px; color:var(--gold); margin:34px 0 6px; letter-spacing:0.01em;}
-    ul.article-list{list-style:none;}
-    .entry{display:grid; grid-template-columns:1fr auto; gap:18px; align-items:start; padding:22px 0; border-bottom:1px solid var(--border);}
-    .entry h3{font-family:var(--serif); font-weight:500; font-size:19px; line-height:1.35;}
-    .entry h3 a{transition:color .15s;}
-    .entry h3 a:hover{color:var(--gold-bright);}
-    .entry .date{font-size:12px; color:var(--text-faint); white-space:nowrap; text-align:right; padding-top:6px;}
+    .entry{display:grid; grid-template-columns:44px 1fr auto; gap:18px; align-items:start; padding:26px 0; border-bottom:1px solid var(--border);}
+    .entry:first-child{padding-top:8px;}
+    .entry .emoji{font-size:22px; line-height:1.3;}
+    .entry h2{font-family:var(--serif); font-weight:500; font-size:19px; line-height:1.35; margin-bottom:6px;}
+    .entry h2 a{transition:color .15s;}
+    .entry h2 a:hover{color:var(--gold-bright);}
+    .entry p{font-size:14.5px; color:var(--text-dim); line-height:1.55; max-width:52ch;}
+    .entry .meta{font-size:12px; color:var(--text-faint); white-space:nowrap; text-align:right; padding-top:4px;}
+    .entry .evidence{display:inline-block; margin-top:8px; font-size:11.5px; color:var(--gold); border:1px solid rgba(201,151,74,0.35); border-radius:10px; padding:2px 9px;}
 
     footer{max-width:760px; margin:0 auto; padding:36px 24px 60px; border-top:1px solid var(--border); font-size:13px; color:var(--text-faint);}
-    footer a{color:var(--gold); margin-right:1.2em;}
 
-    /* article page */
+    @media (max-width:560px){
+        .entry{grid-template-columns:32px 1fr;}
+        .entry .meta{display:none;}
+        header{padding:44px 20px 32px;}
+    }
+
+    /* страница статьи */
     .topbar{max-width:680px; margin:0 auto; padding:28px 24px 0; display:flex; justify-content:space-between; align-items:center;}
     .topbar a{font-size:14px; color:var(--text-dim);}
     .topbar a:hover{color:var(--gold-bright);}
     .topbar .mark{font-family:var(--serif); font-weight:600; color:var(--gold-bright); font-size:17px;}
+
     article{max-width:680px; margin:0 auto; padding:40px 24px 30px;}
+
     .kicker{display:flex; align-items:center; gap:10px; margin-bottom:18px; font-size:13px; color:var(--text-faint);}
-    .kicker .topic-tag{color:var(--gold); border:1px solid rgba(201,151,74,0.35); border-radius:10px; padding:2px 9px; font-size:11.5px;}
+    .kicker .emoji{font-size:17px;}
+    .kicker .evidence{color:var(--gold); border:1px solid rgba(201,151,74,0.35); border-radius:10px; padding:2px 9px; font-size:11.5px;}
+
     article h1{font-family:var(--serif); font-weight:600; font-size:34px; line-height:1.28; margin-bottom:22px; letter-spacing:-0.01em;}
+
+    .lede{font-family:var(--serif); font-style:italic; font-size:19px; color:var(--text-dim); line-height:1.5; padding-left:16px; border-left:2px solid var(--gold); margin-bottom:34px;}
+
     .prose{font-size:16.5px; line-height:1.75; color:var(--text);}
     .prose p{margin-bottom:22px; max-width:62ch;}
     .prose strong{color:var(--gold-bright); font-weight:500;}
+
     .source-link{display:inline-flex; align-items:center; gap:6px; font-size:14px; color:var(--gold); margin-top:8px; border-bottom:1px solid rgba(201,151,74,0.3); padding-bottom:1px;}
+
     .article-footer{max-width:680px; margin:50px auto 0; padding:28px 24px 60px; border-top:1px solid var(--border);}
     .cta{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
     .cta p{font-family:var(--serif); font-size:17px; color:var(--text-dim); max-width:32ch;}
@@ -69,10 +90,8 @@
     .fineprint{margin-top:26px; font-size:12.5px; color:var(--text-faint); line-height:1.6;}
 
     @media (max-width:560px){
-        header{padding:44px 20px 32px;}
         article h1{font-size:27px;}
-        .entry .date{display:none;}
-        .entry{grid-template-columns:1fr;}
+        .lede{font-size:17px;}
     }
 </style>
 </head>
@@ -84,12 +103,14 @@
 
 <article>
   <div class="kicker">
-    <span class="topic-tag">Психология</span>
-    <span>2026-07-15</span>
+    <span class="emoji">🎭</span>
+    <span>Психология &middot; 15 июля 2026</span>
+    <span class="evidence">📊 Ограниченный</span>
   </div>
   <h1>Новые данные подтверждают прежние выводы о психологии</h1>
+  <p class="lede">То, что многие интуитивно чувствуют про психологию, теперь подкреплено более надёжными данными. Семьи детей с нарушениями нервно-психического развития часто сталкиваются с ограниченным доступом к научно обоснованной психиатрической помощи и поддержке, несмотря на непропорционально высокую распространенность среди этих детей сопутствующих состояний, таких как тревога.</p>
+
   <div class="prose">
-    <p>То, что многие интуитивно чувствуют про психологию, теперь подкреплено более надёжными данными. Семьи детей с нарушениями нервно-психического развития часто сталкиваются с ограниченным доступом к научно обоснованной психиатрической помощи и поддержке, несмотря на непропорционально высокую распространенность среди этих детей сопутствующих состояний, таких как тревога.</p>
     <p>Насколько надёжно подтверждается вот это: Семьи детей с нарушениями нервно-психического развития часто сталкиваются с ограниченным доступом к научно обоснованной психиатрической помощи и поддержке?</p>
     <p>Разберёмся по порядку.</p>
     <p>Это исследование было направлено на адаптацию цифрового односессионного вмешательства, предназначенного для снижения родительской адаптации к детской тревожности путем включения прямой обратной связи от родителей нейроразнообразных детей.</p>
@@ -103,6 +124,7 @@
     <p>Стоит помнить: это одно исследование, и его выводы требуют подтверждения.</p>
     <p>Основано на материалах: PubMed.</p>
     <a class="source-link" href="https://pubmed.ncbi.nlm.nih.gov/42455423/">&rarr; Оригинал исследования</a>
+    <a class="source-link" href="https://telegra.ph/Reducing-Parental-Accommodation-in-Neurodiverse-Families-Adaptation-of-a-Digital-Single-Session-Intervention-07-15" style="margin-left:1.5em;">&rarr; Открыть в Telegraph</a>
   </div>
 </article>
 

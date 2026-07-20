@@ -3,6 +3,14 @@ Demo script to generate editorial outputs using EditorialPlanner and EditorialEn
 Run:
     python scripts/demo_generate.py
 """
+import os
+import sys
+
+# Без этого "python scripts/demo_generate.py" из корня падает с
+# ModuleNotFoundError: при прямом запуске Python добавляет в sys.path
+# только scripts/, не корень проекта (ТЗ 2026-07-20, п.2).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from parsers.base import RawArticle
 from adaptation.editorial_engine import EditorialEngine
 from adaptation.editorial_planner import EditorialPlanner

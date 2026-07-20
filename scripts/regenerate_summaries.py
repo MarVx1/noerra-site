@@ -36,7 +36,15 @@ anti-repeat заголовков и т.д.) применяются только 
 """
 
 import logging
+import os
 import sys
+
+# Без этого "python scripts/regenerate_summaries.py" из корня падает с
+# ModuleNotFoundError: при прямом запуске Python добавляет в sys.path
+# только scripts/, не корень проекта, где лежат parsers/adaptation/
+# database и т.д. (ТЗ 2026-07-20, п.2 — раньше приходилось руками
+# выставлять PYTHONPATH перед каждым запуском).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from parsers.base import RawArticle
 from adaptation.editorial_engine import EditorialEngine

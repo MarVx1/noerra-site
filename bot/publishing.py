@@ -21,6 +21,7 @@ from publisher.publisher import create_telegraph_page, send_to_channel
 from adaptation.utils import _shorten as safe_shorten
 from adaptation.utils import _shorten_by_paragraphs
 from adaptation.utils import esc_preserve_own_tags
+from classifier.classifier import get_evidence_label
 
 from bot.bot import get_bot, ADMIN_ID, html_escape
 from bot.keyboards import moderation_keyboard, draft_moderation_keyboard
@@ -200,14 +201,7 @@ async def send_draft_for_editor(draft_id: int):
         passport_info.append(f"🔬 <b>Тип исследования:</b> {type_ru}")
 
     if passport.get('evidence_strength'):
-        strength_ru = {
-            "high": "Высокий",
-            "moderate_high": "Выше среднего",
-            "moderate": "Средний",
-            "limited": "Ограниченный",
-            "weak": "Низкий",
-            "preliminary": "Предварительный",
-        }.get(passport['evidence_strength'], passport['evidence_strength'])
+        strength_ru = get_evidence_label(passport['evidence_strength'])
         passport_info.append(f"💎 <b>Уровень доказательности:</b> {strength_ru}")
 
     if passport.get('sample_size'):

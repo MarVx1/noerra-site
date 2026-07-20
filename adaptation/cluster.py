@@ -4,7 +4,7 @@ import logging
 import re
 from parsers.base import RawArticle
 from parsers.youtube import format_youtube_block
-from classifier.classifier import get_topic_emoji, get_topic_ru
+from classifier.classifier import get_topic_emoji, get_topic_ru, get_evidence_label, get_evidence_emoji
 from adaptation.utils import _translate, _extract_key_sentence, _clean_text, esc
 from adaptation.editorial_engine import EditorialEngine
 from domain.knowledge.mental_models import get_model_brief
@@ -84,22 +84,23 @@ def _collect_sources(articles: list[RawArticle]) -> str:
 
 
 def _evidence_badge(articles: list[RawArticle]) -> str:
-    """Эмодзи-бейдж уровня доказательности на основе evidence_strength."""
+    """Эмодзи-бейдж уровня доказательности на основе evidence_strength.
+
+    Ярлык — из classifier.classifier.get_evidence_label(), единого
+    источника истины (ТЗ 2026-07-20): раньше здесь был свой словарь
+    ("Сильная доказательность (метаанализ/RCT)"), не совпадавший со
+    словом, которое та же статья получала в карточке модерации бота
+    ("Высокий") и на сайте."""
     if not articles:
         return ""
     a = articles[0]
     text = f"{a.title} {a.abstract or ''}"
     study_type = detect_study_type(text, title=a.title or "")
     evidence = classify_evidence_strength(study_type, a.is_peer_reviewed, is_animal_or_invitro_study(text))
-    badges = {
-        "high": "🔬 Сильная доказательность (метаанализ/RCT)",
-        "moderate_high": "🔬 Сильная доказательность (RCT)",
-        "moderate": "📝 Предварительные данные",
-        "limited": "📝 Предварительные данные",
-        "preliminary": "💭 Гипотеза/мнение",
-        "weak": "💭 Гипотеза/мнение",
-    }
-    return badges.get(evidence, "")
+    emoji = get_evidence_emoji(evidence)
+    if not emoji:
+        return ""
+    return f"{emoji} {get_evidence_label(evidence)}"
 
 
 def build_cluster_post(

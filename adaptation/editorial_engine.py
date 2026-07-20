@@ -6,7 +6,7 @@ from typing import Literal
 from dataclasses import asdict
 from adaptation.publication import Publication
 from parsers.base import RawArticle
-from classifier.classifier import get_topic_ru, get_topic_case
+from classifier.classifier import get_topic_ru, get_topic_case, get_evidence_label
 from database import db
 from adaptation.knowledge import build_knowledge_context
 from intelligence.research_analysis.passport_builder import build_research_passport
@@ -508,18 +508,6 @@ def _build_source_line(articles: list[RawArticle]) -> str:
     return f"Основано на материалах: {', '.join(unique) or 'разных источников'}."
 
 
-def _evidence_ru(evidence: str) -> str:
-    """Перевод уровня доказательности на русский."""
-    return {
-        "high": "высокий (метаанализ/систематический обзор)",
-        "moderate_high": "высокий (RCT)",
-        "moderate": "средний",
-        "limited": "ограниченный",
-        "preliminary": "предварительный",
-        "weak": "низкий",
-    }.get(evidence, evidence)
-
-
 def _plural_related_works(n: int) -> str:
     """Согласует числительное: 1 близкая работа / 2 близкие работы / 5 близких работ."""
     if n % 10 == 1 and n % 100 != 11:
@@ -826,7 +814,11 @@ class EditorialEngine:
 
         evidence_strength = passport.get("evidence_strength", "")
         if evidence_strength:
-            blocks.append(f"<b>Уровень доказательности:</b> {_evidence_ru(evidence_strength)}.")
+            # get_evidence_label(): единый источник истины для этого
+            # 6-значного enum (ТЗ 2026-07-20) — раньше здесь был свой
+            # словарь ("высокий (RCT)"), не совпадавший со словом в
+            # карточке модерации бота/дайджесте/сайте ("Высокий").
+            blocks.append(f"<b>Уровень доказательности:</b> {get_evidence_label(evidence_strength)}.")
 
         limitations = passport.get("limitations", "")
         if limitations:

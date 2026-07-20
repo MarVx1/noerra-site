@@ -4,31 +4,32 @@ from scripts.generate_site import _evidence_badge, _row_to_article, _split_lead_
 
 
 class TestEvidenceBadge(unittest.TestCase):
+    """С ТЗ 2026-07-20 (единый бейдж доказательности) ярлык и эмодзи
+    берутся из classifier.classifier.get_evidence_label/get_evidence_emoji
+    — единственного источника истины, общего с bot/publishing.py,
+    adaptation/cluster.py и текстом самого поста (editorial_engine.py)."""
+
     def test_none_when_no_passport(self):
         self.assertIsNone(_evidence_badge(None))
         self.assertIsNone(_evidence_badge(""))
 
-    def test_capitalizes_first_letter_only(self):
-        """Регрессия: .capitalize() лочит регистр всего хвоста строки, а
-        _evidence_ru("moderate_high") возвращает "высокий (RCT)" — старая
-        версия портила это в "высокий (rct)" (найдено на живой статье
-        id=1015, 2026-07-20)."""
-        self.assertEqual(_evidence_badge("moderate_high"), "🔬 Высокий (RCT)")
+    def test_moderate_high_matches_canonical_label(self):
+        self.assertEqual(_evidence_badge("moderate_high"), "🔬 Выше среднего")
 
     def test_high_uses_microscope_emoji(self):
-        self.assertEqual(_evidence_badge("high"), "🔬 Высокий (метаанализ/систематический обзор)")
+        self.assertEqual(_evidence_badge("high"), "🔬 Высокий")
 
-    def test_limited_uses_chart_emoji(self):
-        self.assertEqual(_evidence_badge("limited"), "📊 Ограниченный")
+    def test_limited_uses_notepad_emoji(self):
+        self.assertEqual(_evidence_badge("limited"), "📝 Ограниченный")
 
     def test_preliminary_uses_thought_emoji(self):
         self.assertEqual(_evidence_badge("preliminary"), "💭 Предварительный")
 
-    def test_unknown_value_falls_back_gracefully(self):
+    def test_unknown_value_omits_badge_entirely(self):
         # classify_evidence_strength() всегда возвращает одно из известных
-        # 6 значений, но badge не должен падать, если это когда-то не так.
-        badge = _evidence_badge("something_new")
-        self.assertTrue(badge.startswith("📊"))
+        # 6 значений, но на нераспознанном badge не должен выдумывать
+        # эмодзи/показывать сырое значение — просто нет бейджа.
+        self.assertIsNone(_evidence_badge("something_new"))
 
 
 class TestSplitLeadFromBody(unittest.TestCase):
@@ -74,7 +75,7 @@ class TestRowToArticle(unittest.TestCase):
         self.assertEqual(article["topic_ru"], "Стресс")
         self.assertEqual(article["topic_emoji"], "😓")
         self.assertEqual(article["date"], "2026-07-15")
-        self.assertEqual(article["evidence_badge"], "🔬 Высокий (RCT)")
+        self.assertEqual(article["evidence_badge"], "🔬 Выше среднего")
 
     def test_lead_stripped_from_body_html(self):
         article = _row_to_article(self._row())

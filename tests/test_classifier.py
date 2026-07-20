@@ -11,6 +11,7 @@ import unittest
 
 from classifier.classifier import (
     classify, get_topic_ru, get_topic_case, get_topic_emoji,
+    get_evidence_label, get_evidence_emoji,
     TITLE_WEIGHT_MULTIPLIER, MIN_TOPIC_SCORE, _TOPIC_CASES,
 )
 from parsers.base import RawArticle
@@ -161,6 +162,51 @@ class TestTopicHelpers(unittest.TestCase):
         for topic, emoji in unchanged.items():
             self.assertEqual(get_topic_emoji(topic), emoji)
         self.assertTrue(get_topic_case("not-a-topic", "gen"))
+
+
+class TestEvidenceLabelHelpers(unittest.TestCase):
+    """Единый источник истины для evidence_strength -> текст/эмодзи
+    (ТЗ 2026-07-20) — раньше один и тот же 6-значный enum переводился на
+    русский по-разному в bot/publishing.py, adaptation/cluster.py,
+    scripts/generate_site.py и в самом тексте поста
+    (adaptation/editorial_engine.py)."""
+
+    ALL_VALUES = ("high", "moderate_high", "moderate", "limited", "weak", "preliminary")
+
+    def test_every_known_value_has_label_and_emoji(self):
+        for value in self.ALL_VALUES:
+            with self.subTest(value=value):
+                self.assertTrue(get_evidence_label(value))
+                self.assertTrue(get_evidence_emoji(value))
+
+    def test_canonical_labels_match_bot_publishing_wording(self):
+        """Канонический набор — вариант из bot/publishing.py (ТЗ, п.1)."""
+        expected = {
+            "high": "Высокий",
+            "moderate_high": "Выше среднего",
+            "moderate": "Средний",
+            "limited": "Ограниченный",
+            "weak": "Низкий",
+            "preliminary": "Предварительный",
+        }
+        for value, label in expected.items():
+            self.assertEqual(get_evidence_label(value), label)
+
+    def test_emoji_grouped_by_strength(self):
+        self.assertEqual(get_evidence_emoji("high"), "🔬")
+        self.assertEqual(get_evidence_emoji("moderate_high"), "🔬")
+        self.assertEqual(get_evidence_emoji("moderate"), "📝")
+        self.assertEqual(get_evidence_emoji("limited"), "📝")
+        self.assertEqual(get_evidence_emoji("weak"), "💭")
+        self.assertEqual(get_evidence_emoji("preliminary"), "💭")
+
+    def test_unknown_value_label_falls_back_to_raw_value(self):
+        self.assertEqual(get_evidence_label("not-a-value"), "not-a-value")
+
+    def test_unknown_value_emoji_is_empty(self):
+        """Пустая строка, не выдуманный эмодзи — вызывающая сторона решает,
+        показывать ли бейдж вообще для нераспознанного значения."""
+        self.assertEqual(get_evidence_emoji("not-a-value"), "")
 
 
 if __name__ == "__main__":

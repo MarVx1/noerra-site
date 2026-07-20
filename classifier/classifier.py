@@ -102,6 +102,50 @@ def get_topic_emoji(topic: str) -> str:
     }.get(topic, "📌")
 
 
+
+# Единственный источник истины для "evidence_strength -> отображаемый
+# текст" — раньше этот же 6-значный enum переводился на русский в ТРЁХ
+# независимых местах (bot/publishing.py, adaptation/cluster.py,
+# scripts/generate_site.py) плюс отдельно ещё и в теле самого поста
+# (adaptation/editorial_engine.py:_evidence_ru — не входила в исходные
+# "три места" из ТЗ, но найдена и подключена сюда же: сайт при генерации
+# читает как раз ТЕКСТ ПОСТА, где раньше стояла её версия — не унифицировать
+# её означало бы получить на одной и той же странице сайта два разных
+# ярлыка для одного и того же evidence_strength, разбирать который из них
+# верный). Слова-ярлыки взяты из bot/publishing.py (ТЗ 2026-07-20,
+# п.1) — это самый частый набор, эмодзи по группам сила/среднее/слабое.
+_EVIDENCE_LABELS = {
+    "high":           "Высокий",
+    "moderate_high":  "Выше среднего",
+    "moderate":       "Средний",
+    "limited":        "Ограниченный",
+    "weak":           "Низкий",
+    "preliminary":    "Предварительный",
+}
+
+_EVIDENCE_EMOJI = {
+    "high":           "🔬",
+    "moderate_high":  "🔬",
+    "moderate":       "📝",
+    "limited":        "📝",
+    "weak":           "💭",
+    "preliminary":    "💭",
+}
+
+
+def get_evidence_label(evidence_strength: str) -> str:
+    """Русский ярлык для evidence_strength — используй ВЕЗДЕ, где нужно
+    показать уровень доказательности человеку, вместо своего словаря."""
+    return _EVIDENCE_LABELS.get(evidence_strength, evidence_strength)
+
+
+def get_evidence_emoji(evidence_strength: str) -> str:
+    """🔬 для высокого/выше среднего, 📝 для среднего/ограниченного,
+    💭 для предварительного/низкого. Пустая строка для нераспознанного
+    значения — вызывающая сторона решает, показывать ли бейдж вовсе."""
+    return _EVIDENCE_EMOJI.get(evidence_strength, "")
+
+
 def get_topic_ru(topic: str) -> str:
     return {
         "ADHD":             "СДВГ",
